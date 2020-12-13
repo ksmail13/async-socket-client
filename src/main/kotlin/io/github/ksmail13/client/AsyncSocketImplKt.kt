@@ -39,7 +39,7 @@ class AsyncSocketImplKt
     fun socketRead() {
         val buffer = bufferFactory.createBuffer()
         val read = socket.read(buffer)
-        logger.fine { "Read $read bytes from ${socket.remoteAddress}" }
+        println("Read $read bytes from ${socket.remoteAddress}")
         readFuture.obtrudeValue(buffer)
     }
 
