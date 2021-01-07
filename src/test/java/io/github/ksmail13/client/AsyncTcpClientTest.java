@@ -4,6 +4,9 @@ import io.github.ksmail13.logging.LoggingKt;
 import io.github.ksmail13.server.EchoServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -36,23 +39,51 @@ class AsyncTcpClientTest {
         try {
             InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
             AsyncSocket connect = client.connect(addr);
-            CompletableFuture<ByteBuffer> read = connect.read();
+            ByteArraySubscriber byteArraySubscriber = new ByteArraySubscriber();
+            Publisher<ByteBuffer> read = connect.read();
+            read.subscribe(byteArraySubscriber);
             String test = "test";
             Void j = connect.write(ByteBuffer.wrap(test.getBytes())).join();
-
-            int readed = 0;
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            while (readed < test.length()) {
-                ByteBuffer join = read.join();
-                baos.write(join.array());
-                readed += join.position();
-            }
-            String msg = new String(baos.toByteArray()).trim();
+            String msg = new String(byteArraySubscriber.getFuture().join()).trim();
             logger.info(() -> "recv: " + msg + ", " + msg.length());
             assertThat(msg).isEqualTo(test);
             logger.info("complete");
         } finally {
             target.off();
+        }
+    }
+
+    class ByteArraySubscriber implements Subscriber<ByteBuffer> {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        private CompletableFuture<byte[]> future = new CompletableFuture<>();
+
+        @Override
+        public void onSubscribe(Subscription s) {
+
+        }
+
+        @Override
+        public void onNext(ByteBuffer byteBuffer) {
+            try {
+                baos.write(byteBuffer.array());
+            } catch (IOException e) {
+                logger.severe(() -> String.format("read error %s", e.getMessage()));
+            }
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            future.completeExceptionally(t);
+        }
+
+        @Override
+        public void onComplete() {
+            future.complete(baos.toByteArray());
+        }
+
+        public CompletableFuture<byte[]> getFuture() {
+            return future;
         }
     }
 }

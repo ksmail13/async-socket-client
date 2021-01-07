@@ -5,6 +5,7 @@ import java.util.logging.Level
 import java.util.logging.Logger
 
 fun initLog(logger: Logger): Logger {
-    logger.addHandler(ConsoleHandler().apply { level = Level.ALL })
+    logger.useParentHandlers = false
+    logger.addHandler(ConsoleHandler().apply { level = Level.FINEST })
     return logger
 }
