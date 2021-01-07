@@ -6,5 +6,4 @@ import java.util.concurrent.CompletableFuture;
 public interface AsyncSocket {
     CompletableFuture<ByteBuffer> read();
     CompletableFuture<Void> write(ByteBuffer buffer);
-    CompletableFuture<Void> close();
 }

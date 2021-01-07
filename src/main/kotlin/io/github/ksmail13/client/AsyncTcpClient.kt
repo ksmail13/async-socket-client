@@ -1,7 +1,6 @@
 package io.github.ksmail13.client
 
 import java.net.InetSocketAddress
-import java.nio.ByteBuffer
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
 import java.nio.channels.SocketChannel
@@ -21,32 +20,8 @@ class AsyncTcpClient {
     private val selectExecutor: Executor = Executors.newSingleThreadExecutor()
     private val writeExecutor: Executor = Executors.newWorkStealingPool()
 
-    private val queue: Queue<RunnableFuture<InetSocketAddress>> = LinkedBlockingQueue(1024)
-
     init {
         selectExecutor.execute(SelectRunnable(selector))
-    }
-
-    fun read(addr: InetSocketAddress): CompletableFuture<ByteBuffer> {
-        if (addr !in map) {
-            map[addr] = newSocket(addr)
-        }
-        return map[addr]!!.read()
-    }
-
-    fun write(addr: InetSocketAddress, buf: ByteBuffer): CompletableFuture<Void> {
-        if (addr !in map) {
-            map[addr] = newSocket(addr)
-        }
-        val future = CompletableFuture<Void>()
-        writeExecutor.execute {
-            val socket = map[addr]
-            val write = socket?.socket?.write(buf)
-            println("Write $write bytes")
-            future.complete(null)
-        }
-
-        return future
     }
 
     private fun newSocket(addr: InetSocketAddress): AsyncSocketImplKt {
@@ -59,8 +34,12 @@ class AsyncTcpClient {
             SelectionKey.OP_READ or SelectionKey.OP_WRITE or SelectionKey.OP_CONNECT,
             asyncSocketImplKt
         )
-
+        map[addr] = asyncSocketImplKt
         return asyncSocketImplKt
+    }
+
+    fun connect(addr: InetSocketAddress): AsyncSocket {
+        return map[addr]?: newSocket(addr)
     }
 
     private class SelectRunnable(val selector: Selector) : Runnable {
@@ -70,16 +49,25 @@ class AsyncTcpClient {
             while(running) {
                 val selectedKeyCnt = selector.selectNow()
                 val selectedKeys = selector.selectedKeys()
-                log.fine { "Selected key $selectedKeyCnt" }
+                log.finest { "Selected key $selectedKeyCnt" }
 
                 for (selectedKey in selectedKeys) {
                     val attachment = selectedKey.attachment() as AsyncSocketImplKt
                     val socketChannel = selectedKey.channel() as SocketChannel
-                    if (selectedKey.isReadable) {
+                    if (selectedKey.isValid && selectedKey.isReadable) {
                         attachment.socketRead()
                     }
-                    if (selectedKey.isConnectable) {
-                        log.fine { "Connect $socketChannel" }
+                    if (selectedKey.isValid && selectedKey.isWritable) {
+                        val writeQueue = attachment.writeQueue
+                        if (writeQueue.isEmpty()) continue
+                        val (byteBuffer, completableFuture) = writeQueue.peek()
+                        val write = socketChannel.write(byteBuffer)
+                        log.finest {"write $write bytes to ${socketChannel.remoteAddress}"}
+
+                        if (!byteBuffer.hasRemaining()) {
+                            completableFuture.complete(null)
+                            writeQueue.poll()
+                        }
                     }
                 }
 

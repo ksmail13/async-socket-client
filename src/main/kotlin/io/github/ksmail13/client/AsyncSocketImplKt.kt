@@ -1,6 +1,7 @@
 package io.github.ksmail13.client
 
 import io.github.ksmail13.common.BufferFactory
+import io.github.ksmail13.logging.initLog
 import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import java.util.*
@@ -12,9 +13,9 @@ class AsyncSocketImplKt
 @JvmOverloads constructor(
     internal val socket: SocketChannel,
     private val bufferFactory: BufferFactory = BufferFactory(1024),
-    private val writeQueue: Queue<WriteInfo> = LinkedBlockingQueue()
-) : AsyncSocket, Runnable {
-    private val logger: Logger = Logger.getLogger(AsyncSocketImplKt::class.java.name)
+    internal val writeQueue: Queue<WriteInfo> = LinkedBlockingQueue()
+) : AsyncSocket {
+    private val logger: Logger = initLog(Logger.getLogger(AsyncSocketImplKt::class.java.name))
     private val readFuture: CompletableFuture<ByteBuffer> = CompletableFuture()
 
     override fun read(): CompletableFuture<ByteBuffer> {
@@ -31,7 +32,7 @@ class AsyncSocketImplKt
         return future
     }
 
-    override fun close(): CompletableFuture<Void> {
+    fun close(): CompletableFuture<Void> {
         socket.close()
         return CompletableFuture.completedFuture(null)
     }
@@ -39,11 +40,17 @@ class AsyncSocketImplKt
     fun socketRead() {
         val buffer = bufferFactory.createBuffer()
         val read = socket.read(buffer)
-        println("Read $read bytes from ${socket.remoteAddress}")
+        if (read <= 0) {
+            logger.finest { "Closed by server" }
+            socket.close()
+            return
+        }
+
+        logger.finest { "Read $read bytes from ${socket.remoteAddress}" }
         readFuture.obtrudeValue(buffer)
     }
 
-    override fun run() {
+    fun run() {
         while (socket.isOpen) {
             val (buf, future) = writeQueue.poll()
 
