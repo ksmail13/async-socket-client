@@ -21,7 +21,7 @@ class AsyncSocketImplKt
     private val readFuture: SimplePublisher<ByteBuffer> = SimplePublisher()
 
     override fun read(): Publisher<ByteBuffer> {
-        return readFuture;
+        return readFuture
     }
 
     override fun write(buffer: ByteBuffer?): CompletableFuture<Void> {
@@ -40,7 +40,7 @@ class AsyncSocketImplKt
         return CompletableFuture.completedFuture(null)
     }
 
-    fun socketRead() {
+    internal fun socketRead() {
         try {
             val buffer = bufferFactory.createBuffer()
             val read = socket.read(buffer)
@@ -52,19 +52,27 @@ class AsyncSocketImplKt
             }
 
             logger.finest { "Read $read bytes from ${socket.remoteAddress}" }
-            readFuture.push(buffer.limit(read))
+            readFuture.push(buffer.limit(read) as ByteBuffer)
         } catch (e: Throwable) {
             readFuture.error(e)
         }
     }
 
-    fun run() {
-        while (socket.isOpen) {
-            val (buf, future) = writeQueue.poll()
-
-            val write = socket.write(buf)
-            logger.fine { "Write $write bytes to ${socket.remoteAddress}" }
-            future.complete(null)
+    internal fun socketWrite(): Boolean {
+        if (writeQueue.isEmpty()) return true
+        if (!socket.isOpen || !socket.isConnected) {
+            logger.info {"socket closed"}
+            return false
         }
+        val (byteBuffer, completableFuture) = writeQueue.peek()
+        val write = socket.write(byteBuffer)
+        logger.info {"write $write bytes to ${socket.remoteAddress}"}
+
+        if (!byteBuffer.hasRemaining()) {
+            completableFuture.complete(null)
+            writeQueue.poll()
+        }
+
+        return true
     }
 }

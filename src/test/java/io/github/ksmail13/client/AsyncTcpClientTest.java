@@ -2,6 +2,7 @@ package io.github.ksmail13.client;
 
 import io.github.ksmail13.logging.LoggingKt;
 import io.github.ksmail13.server.EchoServer;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
@@ -12,6 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.security.SecureRandom;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
@@ -34,29 +36,35 @@ class AsyncTcpClientTest {
         serverThread.start();
     }
 
-    @Test
-    void test() throws IOException {
-        try {
-            InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-            AsyncSocket connect = client.connect(addr);
-            ByteArraySubscriber byteArraySubscriber = new ByteArraySubscriber();
-            Publisher<ByteBuffer> read = connect.read();
-            read.subscribe(byteArraySubscriber);
-            String test = "test";
-            Void j = connect.write(ByteBuffer.wrap(test.getBytes())).join();
-            String msg = new String(byteArraySubscriber.getFuture().join()).trim();
-            logger.info(() -> "recv: " + msg + ", " + msg.length());
-            assertThat(msg).isEqualTo(test);
-            logger.info("complete");
-        } finally {
-            target.off();
-        }
+    @AfterEach
+    public void clear() {
+        target.off();
+        client.close();
     }
 
-    class ByteArraySubscriber implements Subscriber<ByteBuffer> {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    @Test
+    void test() {
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
+        AsyncSocket connect = client.connect(addr);
+        ByteArraySubscriber byteArraySubscriber = new ByteArraySubscriber();
+        Publisher<ByteBuffer> read = connect.read();
+        read.subscribe(byteArraySubscriber);
+        String test = "test";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 10; i++) {
+            Void j = connect.write(ByteBuffer.wrap(test.getBytes())).join();
+            String msg = new String(byteArraySubscriber.getFuture().join()).trim();
+            logger.info(() -> "recv Message from: " + msg + ", " + msg.length());
+            sb.append(msg);
+            assertThat(msg).isEqualTo(test);
+        }
+        assertThat(sb.toString()).isEqualTo("testtesttesttesttesttesttesttesttesttest");
+        logger.info("complete");
+    }
 
-        private CompletableFuture<byte[]> future = new CompletableFuture<>();
+    static class ByteArraySubscriber implements Subscriber<ByteBuffer> {
+
+        private final CompletableFuture<byte[]> future = new CompletableFuture<>();
 
         @Override
         public void onSubscribe(Subscription s) {
@@ -65,11 +73,7 @@ class AsyncTcpClientTest {
 
         @Override
         public void onNext(ByteBuffer byteBuffer) {
-            try {
-                baos.write(byteBuffer.array());
-            } catch (IOException e) {
-                logger.severe(() -> String.format("read error %s", e.getMessage()));
-            }
+            future.obtrudeValue(byteBuffer.compact().array());
         }
 
         @Override
@@ -79,7 +83,7 @@ class AsyncTcpClientTest {
 
         @Override
         public void onComplete() {
-            future.complete(baos.toByteArray());
+
         }
 
         public CompletableFuture<byte[]> getFuture() {

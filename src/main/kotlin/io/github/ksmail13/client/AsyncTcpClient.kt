@@ -16,12 +16,11 @@ class AsyncTcpClient {
 
     private val map: MutableMap<InetSocketAddress, AsyncSocketImplKt> = ConcurrentHashMap()
     private val selector: Selector = Selector.open()
-
     private val selectExecutor: Executor = Executors.newSingleThreadExecutor()
-    private val writeExecutor: Executor = Executors.newWorkStealingPool()
+    private val selectRunnable = SelectRunnable(selector)
 
     init {
-        selectExecutor.execute(SelectRunnable(selector))
+        selectExecutor.execute(selectRunnable)
     }
 
     private fun newSocket(addr: InetSocketAddress): AsyncSocketImplKt {
@@ -39,38 +38,42 @@ class AsyncTcpClient {
     }
 
     fun connect(addr: InetSocketAddress): AsyncSocket {
-        return map[addr]?: newSocket(addr)
+        return map[addr] ?: newSocket(addr)
+    }
+
+    fun close() {
+        selector.close()
+        selectRunnable.off()
     }
 
     private class SelectRunnable(val selector: Selector) : Runnable {
         private var running = true
+        private val writableClient: MutableSet<AsyncSocketImplKt> = CopyOnWriteArraySet()
 
         override fun run() {
-            while(running) {
+            while (running && selector.isOpen) {
                 val selectedKeyCnt = selector.selectNow()
                 val selectedKeys = selector.selectedKeys()
                 log.finest { "Selected key $selectedKeyCnt" }
 
                 for (selectedKey in selectedKeys) {
                     val attachment = selectedKey.attachment() as AsyncSocketImplKt
-                    val socketChannel = selectedKey.channel() as SocketChannel
                     if (selectedKey.isValid && selectedKey.isReadable) {
                         attachment.socketRead()
                     }
-                    if (selectedKey.isValid && selectedKey.isWritable) {
-                        val writeQueue = attachment.writeQueue
-                        if (writeQueue.isEmpty()) continue
-                        val (byteBuffer, completableFuture) = writeQueue.peek()
-                        val write = socketChannel.write(byteBuffer)
-                        log.finest {"write $write bytes to ${socketChannel.remoteAddress}"}
 
-                        if (!byteBuffer.hasRemaining()) {
-                            completableFuture.complete(null)
-                            writeQueue.poll()
+                    if (selectedKey.isValid && ((selectedKey.readyOps() and SelectionKey.OP_WRITE) > 0)) {
+                        if (selectedKey.isWritable) {
+                            writableClient.add(attachment)
+                        } else {
+                            writableClient.remove(attachment)
                         }
                     }
                 }
 
+                writableClient
+                    .filter { s -> !s.socketWrite() }
+                    .forEach { s -> writableClient.remove(s) }
             }
         }
 
@@ -79,4 +82,4 @@ class AsyncTcpClient {
         }
 
     }
- }
+}
