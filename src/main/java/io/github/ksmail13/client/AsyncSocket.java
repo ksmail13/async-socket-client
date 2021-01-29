@@ -8,4 +8,5 @@ import java.util.concurrent.CompletableFuture;
 public interface AsyncSocket {
     Publisher<ByteBuffer> read();
     CompletableFuture<Void> write(ByteBuffer buffer);
+    CompletableFuture<Void> close();
 }

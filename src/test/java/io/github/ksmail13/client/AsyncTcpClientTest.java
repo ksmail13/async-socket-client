@@ -1,19 +1,16 @@
 package io.github.ksmail13.client;
 
-import io.github.ksmail13.logging.LoggingKt;
 import io.github.ksmail13.server.EchoServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.security.SecureRandom;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
@@ -60,6 +57,40 @@ class AsyncTcpClientTest {
         }
         assertThat(sb.toString()).isEqualTo("testtesttesttesttesttesttesttesttesttest");
         logger.info("complete");
+    }
+
+    @Test
+    @Timeout(value = 1)
+    void closeTest() {
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
+        AsyncSocket connect = client.connect(addr);
+        ByteArraySubscriber byteArraySubscriber = new ByteArraySubscriber();
+        Publisher<ByteBuffer> read = connect.read();
+        CompletableFuture<Void> emptyFuture = new CompletableFuture<>();
+        read.subscribe(new Subscriber<ByteBuffer>() {
+            @Override
+            public void onSubscribe(Subscription s) {
+
+            }
+
+            @Override
+            public void onNext(ByteBuffer byteBuffer) {
+
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                emptyFuture.completeExceptionally(t);
+            }
+
+            @Override
+            public void onComplete() {
+                emptyFuture.complete(null);
+            }
+        });
+
+        connect.close().join();
+        emptyFuture.join();
     }
 
     static class ByteArraySubscriber implements Subscriber<ByteBuffer> {

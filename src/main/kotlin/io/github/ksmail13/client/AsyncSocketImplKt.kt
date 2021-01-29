@@ -34,10 +34,17 @@ class AsyncSocketImplKt
         return future
     }
 
-    fun close(): CompletableFuture<Void> {
-        socket.close()
-        readFuture.close()
-        return CompletableFuture.completedFuture(null)
+    override fun close(): CompletableFuture<Void> {
+        val future = CompletableFuture<Void>()
+        return try {
+            socket.close()
+            readFuture.close()
+            future.complete(null)
+            future
+        } catch(e: Exception) {
+            future.completeExceptionally(e)
+            future
+        }
     }
 
     internal fun socketRead() {
