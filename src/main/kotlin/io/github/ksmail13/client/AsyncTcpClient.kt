@@ -1,17 +1,16 @@
 package io.github.ksmail13.client
 
+import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
 import java.nio.channels.SocketChannel
-import java.util.*
 import java.util.concurrent.*
-import java.util.logging.Logger
 
 class AsyncTcpClient {
 
     companion object {
-        private val log: Logger = Logger.getLogger(AsyncTcpClient::class.java.name)
+        private val log = LoggerFactory.getLogger(AsyncTcpClient::class.java.name)
     }
 
     private val map: MutableMap<InetSocketAddress, AsyncSocketImplKt> = ConcurrentHashMap()
@@ -24,7 +23,7 @@ class AsyncTcpClient {
     }
 
     private fun newSocket(addr: InetSocketAddress): AsyncSocketImplKt {
-        log.fine { "create socket $addr" }
+        log.debug("create socket $addr")
         val socket = SocketChannel.open(addr)
         socket.configureBlocking(false)
         val asyncSocketImplKt = AsyncSocketImplKt(socket)
@@ -53,8 +52,9 @@ class AsyncTcpClient {
         override fun run() {
             while (running && selector.isOpen) {
                 val selectedKeyCnt = selector.selectNow()
+                if (!selector.isOpen) break
                 val selectedKeys = selector.selectedKeys()
-                log.finest { "Selected key $selectedKeyCnt" }
+                log.trace("Selected key {}", selectedKeyCnt)
 
                 for (selectedKey in selectedKeys) {
                     val attachment = selectedKey.attachment() as AsyncSocketImplKt

@@ -21,7 +21,7 @@ class SimplePublisher<T> : Publisher<T> {
             throw IllegalStateException("")
         }
         SUBSCRIBER.set(this, s)
-        s?.onSubscribe(SimpleSubscription())
+        s?.onSubscribe(SimpleSubscription)
     }
 
     fun push(t: T) {
@@ -36,7 +36,7 @@ class SimplePublisher<T> : Publisher<T> {
         subscriber?.onComplete()
     }
 
-    inner class SimpleSubscription : Subscription {
+    private object SimpleSubscription : Subscription {
 
         override fun request(n: Long) {
 

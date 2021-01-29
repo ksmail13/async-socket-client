@@ -8,17 +8,18 @@ import org.junit.jupiter.api.Timeout;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 
 class AsyncTcpClientTest {
-    private static final Logger logger = Logger.getLogger(AsyncTcpClient.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(AsyncTcpClient.class.getName());
 
     private AsyncTcpClient client = new AsyncTcpClient();
 
@@ -51,7 +52,7 @@ class AsyncTcpClientTest {
         for (int i = 0; i < 10; i++) {
             Void j = connect.write(ByteBuffer.wrap(test.getBytes())).join();
             String msg = new String(byteArraySubscriber.getFuture().join()).trim();
-            logger.info(() -> "recv Message from: " + msg + ", " + msg.length());
+            logger.info("recv Message from: {}({})", msg, msg.length());
             sb.append(msg);
             assertThat(msg).isEqualTo(test);
         }

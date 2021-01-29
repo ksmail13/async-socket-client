@@ -1,15 +1,15 @@
 package io.github.ksmail13.server;
 
-import io.github.ksmail13.logging.LoggingKt;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.logging.Logger;
 
 public class EchoServer implements Runnable {
-    private static final Logger logger = LoggingKt.initLog(Logger.getLogger(EchoServer.class.getName()));
+    private static final Logger logger = LoggerFactory.getLogger(EchoServer.class);
 
     private ServerSocket serverSocket;
     private boolean runnable = true;
@@ -38,7 +38,7 @@ public class EchoServer implements Runnable {
             while(!accept.isClosed()) {
                 try {
                     int read = accept.getInputStream().read(bytes);
-                    logger.info(() -> String.format("server recv : %d %s\n", read, new String(bytes)));
+                    logger.info("server recv : {} {}", read, new String(bytes));
                     OutputStream outputStream = accept.getOutputStream();
                     outputStream.write(bytes);
                     outputStream.flush();
