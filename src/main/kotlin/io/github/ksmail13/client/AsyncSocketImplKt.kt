@@ -19,6 +19,8 @@ class AsyncSocketImplKt
     private val logger = LoggerFactory.getLogger(AsyncSocketImplKt::class.java)
     private val readFuture: SimplePublisher<ByteBuffer> = SimplePublisher()
 
+    fun isClose() = !socket.isOpen
+
     override fun read(): Publisher<ByteBuffer> {
         return readFuture
     }
@@ -50,15 +52,18 @@ class AsyncSocketImplKt
         try {
             val buffer = bufferFactory.createBuffer()
             val read = socket.read(buffer)
-            if (read <= 0) {
-                logger.debug("Closed by server")
-                socket.close()
-                readFuture.close()
-                return
+            when {
+                read <= 0 -> {
+                    logger.debug("Closed by server ({})", read)
+                    socket.close()
+                    readFuture.close()
+                    return
+                }
+                else -> {
+                    logger.debug("Read $read bytes from ${socket.remoteAddress}")
+                    readFuture.push(buffer.limit(read) as ByteBuffer)
+                }
             }
-
-            logger.debug("Read $read bytes from ${socket.remoteAddress}")
-            readFuture.push(buffer.limit(read) as ByteBuffer)
         } catch (e: Throwable) {
             readFuture.error(e)
         }
@@ -75,6 +80,7 @@ class AsyncSocketImplKt
         logger.info("write $write bytes to ${socket.remoteAddress}")
 
         if (!byteBuffer.hasRemaining()) {
+            logger.debug("complete write")
             completableFuture.complete(null)
             writeQueue.poll()
         }

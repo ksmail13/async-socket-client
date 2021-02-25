@@ -1,10 +1,8 @@
 package io.github.ksmail13.client;
 
 import io.github.ksmail13.server.EchoServer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
+import kotlin.text.StringsKt;
+import org.junit.jupiter.api.*;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -21,22 +19,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AsyncTcpClientTest {
     private static final Logger logger = LoggerFactory.getLogger(AsyncTcpClient.class.getName());
 
-    private AsyncTcpClient client = new AsyncTcpClient();
+    private AsyncTcpClient client;
 
-    Thread serverThread;
-    private EchoServer target;
+    static Thread serverThread;
+    private static EchoServer target;
 
-    @BeforeEach
-    public void init() {
+    @BeforeAll
+    public static void initServer() {
         target = new EchoServer(35000);
         serverThread = new Thread(target);
         serverThread.setDaemon(true);
         serverThread.start();
     }
 
+    @AfterAll
+    public static void clearServer() {
+        target.off();
+    }
+
+    @BeforeEach
+    public void init() {
+        client = new AsyncTcpClient();
+    }
+
     @AfterEach
     public void clear() {
-        target.off();
         client.close();
     }
 
@@ -49,14 +56,15 @@ class AsyncTcpClientTest {
         read.subscribe(byteArraySubscriber);
         String test = "test";
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 10; i++) {
+        int cnt = 10;
+        for (int i = 0; i < cnt; i++) {
             Void j = connect.write(ByteBuffer.wrap(test.getBytes())).join();
             String msg = new String(byteArraySubscriber.getFuture().join()).trim();
             logger.info("recv Message from: {}({})", msg, msg.length());
             sb.append(msg);
             assertThat(msg).isEqualTo(test);
         }
-        assertThat(sb.toString()).isEqualTo("testtesttesttesttesttesttesttesttesttest");
+        assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
         logger.info("complete");
     }
 

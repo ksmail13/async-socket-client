@@ -35,12 +35,19 @@ public class EchoServer implements Runnable {
         while(runnable) {
             Socket accept = accept();
             byte[] bytes = new byte[1024];
-            while(!accept.isClosed()) {
+            while (!accept.isClosed()) {
                 try {
                     int read = accept.getInputStream().read(bytes);
-                    logger.info("server recv : {} {}", read, new String(bytes));
+                    if (read == 0) break;
+                    if (read < 0) {
+                        accept.close();
+                        break;
+                    }
+                    byte[] readed = new byte[read];
+                    System.arraycopy(bytes, 0, readed, 0, read);
+                    logger.info("server recv : {} {}", read, new String(readed));
                     OutputStream outputStream = accept.getOutputStream();
-                    outputStream.write(bytes);
+                    outputStream.write(readed);
                     outputStream.flush();
                 } catch (IOException e) {
                     throw new IllegalStateException(e);
