@@ -1,5 +1,7 @@
 package io.github.ksmail13.client;
 
+import io.github.ksmail13.buffer.DataBuffer;
+import io.github.ksmail13.buffer.ImmutableDataBuffer;
 import io.github.ksmail13.server.EchoServer;
 import kotlin.text.StringsKt;
 import org.junit.jupiter.api.*;
@@ -51,18 +53,18 @@ class AsyncTcpClientTest {
     void test() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
         AsyncSocket connect = client.connect(addr);
-        ByteArraySubscriber byteArraySubscriber = new ByteArraySubscriber();
-        Publisher<ByteBuffer> read = connect.read();
-        read.subscribe(byteArraySubscriber);
+        DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
+        Publisher<DataBuffer> read = connect.read();
+        read.subscribe(dataBufferSubscriber);
         String test = "test";
         StringBuilder sb = new StringBuilder();
         int cnt = 10;
         for (int i = 0; i < cnt; i++) {
-            Void j = connect.write(ByteBuffer.wrap(test.getBytes())).join();
-            String msg = new String(byteArraySubscriber.getFuture().join()).trim();
+            Void j = connect.write(ImmutableDataBuffer.Companion.invoke().append(test.getBytes())).join();
+            String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
             logger.info("recv Message from: {}({})", msg, msg.length());
             sb.append(msg);
-            assertThat(msg).isEqualTo(test);
+            assertThat(test).isEqualTo(msg);
         }
         assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
         logger.info("complete");
@@ -73,17 +75,17 @@ class AsyncTcpClientTest {
     void closeTest() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
         AsyncSocket connect = client.connect(addr);
-        ByteArraySubscriber byteArraySubscriber = new ByteArraySubscriber();
-        Publisher<ByteBuffer> read = connect.read();
+        DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
+        Publisher<DataBuffer> read = connect.read();
         CompletableFuture<Void> emptyFuture = new CompletableFuture<>();
-        read.subscribe(new Subscriber<ByteBuffer>() {
+        read.subscribe(new Subscriber<DataBuffer>() {
             @Override
             public void onSubscribe(Subscription s) {
 
             }
 
             @Override
-            public void onNext(ByteBuffer byteBuffer) {
+            public void onNext(DataBuffer byteBuffer) {
 
             }
 
@@ -102,7 +104,7 @@ class AsyncTcpClientTest {
         emptyFuture.join();
     }
 
-    static class ByteArraySubscriber implements Subscriber<ByteBuffer> {
+    static class DataBufferSubscriber implements Subscriber<DataBuffer> {
 
         private final CompletableFuture<byte[]> future = new CompletableFuture<>();
 
@@ -112,8 +114,10 @@ class AsyncTcpClientTest {
         }
 
         @Override
-        public void onNext(ByteBuffer byteBuffer) {
-            future.obtrudeValue(byteBuffer.compact().array());
+        public void onNext(DataBuffer byteBuffer) {
+            ByteBuffer buffer = byteBuffer.toBuffer();
+            byte[] array = buffer.compact().array();
+            future.obtrudeValue(array);
         }
 
         @Override

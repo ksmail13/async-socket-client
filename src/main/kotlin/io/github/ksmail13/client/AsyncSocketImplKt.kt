@@ -1,10 +1,11 @@
 package io.github.ksmail13.client
 
+import io.github.ksmail13.buffer.DataBuffer
+import io.github.ksmail13.buffer.ImmutableDataBuffer
 import io.github.ksmail13.common.BufferFactory
 import io.github.ksmail13.publisher.SimplePublisher
 import org.reactivestreams.Publisher
 import org.slf4j.LoggerFactory
-import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import java.util.*
 import java.util.concurrent.CompletableFuture
@@ -17,21 +18,21 @@ class AsyncSocketImplKt
     internal val writeQueue: Queue<WriteInfo> = LinkedBlockingQueue()
 ) : AsyncSocket {
     private val logger = LoggerFactory.getLogger(AsyncSocketImplKt::class.java)
-    private val readFuture: SimplePublisher<ByteBuffer> = SimplePublisher()
+    private val readFuture: SimplePublisher<DataBuffer> = SimplePublisher()
 
     fun isClose() = !socket.isOpen
 
-    override fun read(): Publisher<ByteBuffer> {
+    override fun read(): Publisher<DataBuffer> {
         return readFuture
     }
 
-    override fun write(buffer: ByteBuffer?): CompletableFuture<Void> {
+    override fun write(buffer: DataBuffer?): CompletableFuture<Void> {
         if (buffer == null) {
             return CompletableFuture.completedFuture(null)
         }
 
         val future = CompletableFuture<Void>()
-        writeQueue.add(buffer to future)
+        writeQueue.add(buffer.toBuffer() to future)
         return future
     }
 
@@ -61,7 +62,7 @@ class AsyncSocketImplKt
                 }
                 else -> {
                     logger.debug("Read $read bytes from ${socket.remoteAddress}")
-                    readFuture.push(buffer.limit(read) as ByteBuffer)
+                    readFuture.push(ImmutableDataBuffer().append(buffer.limit(read)))
                 }
             }
         } catch (e: Throwable) {
