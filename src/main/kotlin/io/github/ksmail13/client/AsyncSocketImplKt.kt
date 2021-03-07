@@ -2,10 +2,12 @@ package io.github.ksmail13.client
 
 import io.github.ksmail13.buffer.DataBuffer
 import io.github.ksmail13.buffer.ImmutableDataBuffer
+import io.github.ksmail13.buffer.emptyBuffer
 import io.github.ksmail13.common.BufferFactory
 import io.github.ksmail13.publisher.SimplePublisher
 import org.reactivestreams.Publisher
 import org.slf4j.LoggerFactory
+import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import java.util.*
 import java.util.concurrent.CompletableFuture
@@ -62,7 +64,7 @@ class AsyncSocketImplKt
                 }
                 else -> {
                     logger.debug("Read $read bytes from ${socket.remoteAddress}")
-                    readFuture.push(ImmutableDataBuffer().append(buffer.limit(read)))
+                    readFuture.push(emptyBuffer().append(buffer.limit(read) as ByteBuffer))
                 }
             }
         } catch (e: Throwable) {
