@@ -1,8 +1,9 @@
 package io.github.ksmail13.client;
 
 import io.github.ksmail13.buffer.DataBuffer;
-import io.github.ksmail13.buffer.ImmutableDataBuffer;
+import io.github.ksmail13.buffer.EmptyDataBuffer;
 import io.github.ksmail13.server.EchoServer;
+import kotlin.ranges.IntRange;
 import kotlin.text.StringsKt;
 import org.junit.jupiter.api.*;
 import org.reactivestreams.Publisher;
@@ -13,13 +14,19 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 
 class AsyncTcpClientTest {
     private static final Logger logger = LoggerFactory.getLogger(AsyncTcpClient.class.getName());
+    public static final int CNT = 2;
 
     private AsyncTcpClient client;
 
@@ -60,7 +67,7 @@ class AsyncTcpClientTest {
         StringBuilder sb = new StringBuilder();
         int cnt = 10;
         for (int i = 0; i < cnt; i++) {
-            Void j = connect.write(ImmutableDataBuffer.Companion.invoke().append(test.getBytes())).join();
+            Void j = connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).join();
             String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
             logger.info("recv Message from: {}({})", msg, msg.length());
             sb.append(msg);
@@ -102,6 +109,42 @@ class AsyncTcpClientTest {
 
         connect.close().join();
         emptyFuture.join();
+    }
+
+    @Test
+    void testMulti() throws InterruptedException {
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
+        CountDownLatch countDownLatch = new CountDownLatch(CNT);
+        List<AsyncSocket> collect = IntStream.range(0, CNT)
+                .mapToObj(i -> client.connect(addr)).collect(Collectors.toList());
+
+        for (AsyncSocket connect : collect) {
+            Thread thread = new Thread(() -> {
+                DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
+                Publisher<DataBuffer> read = connect.read();
+                read.subscribe(dataBufferSubscriber);
+                String test = "test";
+                StringBuilder sb = new StringBuilder();
+                int cnt = 10;
+                for (int i = 0; i < cnt; i++) {
+
+                    Void j = connect.write(EmptyDataBuffer.INSTANCE.append(test)).join();
+                    String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
+                    logger.info("recv Message from: {}({})", msg, msg.length());
+                    sb.append(msg);
+                    assertThat(test).isEqualTo(msg);
+                }
+                assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
+                logger.info("complete");
+                connect.close().join();
+                countDownLatch.countDown();
+            });
+
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        countDownLatch.await();
     }
 
     static class DataBufferSubscriber implements Subscriber<DataBuffer> {
