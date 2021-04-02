@@ -40,16 +40,17 @@ internal class NioSelectorManager(id: Int) : Closeable {
             while (running && selector.isOpen) {
                 val selectedKeyCnt = selector.selectNow()
                 if (!selector.isOpen) break
-                val selectedKeys = selector.selectedKeys()
+                val selectedKeys = selector.selectedKeys().iterator()
 
-                if (selectedKeyCnt > 0) {
-                    log.debug("Selected key {}", selectedKeyCnt)
-                    selectedKeys.forEach {
-                        if (it.isValid && it.isReadable) {
-                            val attachment = it.attachment() as AsyncSocketImplKt
-                            attachment.socketRead()
-                        }
-                    }
+                if (selectedKeyCnt <= 0) continue
+                log.debug("Selected key {}", selectedKeyCnt)
+
+                while(selectedKeys.hasNext()) {
+                    val it = selectedKeys.next()
+                    if (!it.isValid || !it.isReadable) return
+                    val attachment = it.attachment() as AsyncSocketImplKt
+                    attachment.socketRead()
+                    selectedKeys.remove()
                 }
             }
         }

@@ -75,12 +75,12 @@ class AsyncSocketImplKt
     internal fun socketWrite(): Boolean {
         if (writeQueue.isEmpty()) return true
         if (!socket.isOpen || !socket.isConnected) {
-            logger.info("socket closed")
+            logger.debug("socket closed")
             return false
         }
         val (byteBuffer, completableFuture) = writeQueue.peek()
         val write = socket.write(byteBuffer)
-        logger.info("write $write bytes to ${socket.remoteAddress}")
+        logger.trace("write $write bytes to ${socket.remoteAddress}")
 
         if (!byteBuffer.hasRemaining()) {
             logger.debug("complete write")
