@@ -4,6 +4,7 @@ import io.github.ksmail13.buffer.DataBuffer
 import io.github.ksmail13.buffer.ImmutableDataBuffer
 import io.github.ksmail13.buffer.emptyBuffer
 import io.github.ksmail13.common.BufferFactory
+import io.github.ksmail13.publisher.EmptyPublisher
 import io.github.ksmail13.publisher.SimplePublisher
 import org.reactivestreams.Publisher
 import org.slf4j.LoggerFactory
@@ -28,25 +29,24 @@ class AsyncSocketImplKt
         return readFuture
     }
 
-    override fun write(buffer: DataBuffer?): CompletableFuture<Void> {
+    override fun write(buffer: DataBuffer?): Publisher<Void> {
         if (buffer == null) {
-            return CompletableFuture.completedFuture(null)
+            return EmptyPublisher(true)
         }
 
-        val future = CompletableFuture<Void>()
+        val future = EmptyPublisher()
         writeQueue.add(buffer.toBuffer() to future)
         return future
     }
 
-    override fun close(): CompletableFuture<Void> {
-        val future = CompletableFuture<Void>()
+    override fun close(): Publisher<Void> {
+        val future = EmptyPublisher()
         return try {
             socket.close()
             readFuture.close()
-            future.complete(null)
-            future
+            EmptyPublisher()
         } catch(e: Exception) {
-            future.completeExceptionally(e)
+            future.error(e)
             future
         }
     }
@@ -84,7 +84,7 @@ class AsyncSocketImplKt
 
         if (!byteBuffer.hasRemaining()) {
             logger.debug("complete write")
-            completableFuture.complete(null)
+            completableFuture.complete()
             writeQueue.poll()
         }
 
