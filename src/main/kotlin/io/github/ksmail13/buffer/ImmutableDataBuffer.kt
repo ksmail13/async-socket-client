@@ -1,6 +1,5 @@
 package io.github.ksmail13.buffer
 
-import io.github.ksmail13.utils.toReadonlyList
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
@@ -10,7 +9,7 @@ import java.nio.charset.StandardCharsets
  */
 internal class ImmutableDataBuffer internal constructor (private val dataList: List<Any> = listOf()) : DataBuffer {
 
-    private fun appendInternal(value: Any) = ImmutableDataBuffer(dataList.toMutableList().apply { add(value) }.toReadonlyList())
+    private fun appendInternal(value: Any) = ImmutableDataBuffer(dataList.toMutableList().apply { add(value) }.toList())
 
     override fun append(`val`: Int) = appendInternal(`val`)
 
