@@ -1,7 +1,6 @@
 package io.github.ksmail13.client
 
 import io.github.ksmail13.buffer.DataBuffer
-import io.github.ksmail13.buffer.ImmutableDataBuffer
 import io.github.ksmail13.buffer.emptyBuffer
 import io.github.ksmail13.common.BufferFactory
 import io.github.ksmail13.publisher.EmptyPublisher
@@ -11,7 +10,6 @@ import org.slf4j.LoggerFactory
 import java.nio.ByteBuffer
 import java.nio.channels.SocketChannel
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
 
 class AsyncSocketImplKt
