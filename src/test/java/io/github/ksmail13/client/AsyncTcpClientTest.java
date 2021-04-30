@@ -3,8 +3,8 @@ package io.github.ksmail13.client;
 import io.github.ksmail13.buffer.DataBuffer;
 import io.github.ksmail13.buffer.EmptyDataBuffer;
 import io.github.ksmail13.server.EchoServer;
+import io.github.ksmail13.utils.JoinableSubscriber;
 import kotlin.Pair;
-import kotlin.ranges.IntRange;
 import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.*;
@@ -21,15 +21,24 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 
 class AsyncTcpClientTest {
     private static final Logger logger = LoggerFactory.getLogger(AsyncTcpClient.class.getName());
-    public static final int CNT = 2;
+    public static final int CNT = 10;
+    public static final ThreadFactory THREAD_FACTORY = new ThreadFactory() {
+        final AtomicInteger idx = new AtomicInteger();
+
+        @Override
+        public Thread newThread(@NotNull Runnable runnable) {
+            Thread thread = new Thread(runnable, "executor-" + idx.getAndIncrement());
+            thread.setDaemon(true);
+
+            return thread;
+        }
+    };
 
     private AsyncTcpClient client;
 
@@ -70,7 +79,9 @@ class AsyncTcpClientTest {
         StringBuilder sb = new StringBuilder();
         int cnt = 10;
         for (int i = 0; i < cnt; i++) {
-            Void j = connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).join();
+            JoinableSubscriber<Void> joinableSubscriber = new JoinableSubscriber<>();
+            connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).subscribe(joinableSubscriber);
+            joinableSubscriber.join();
             String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
             logger.info("recv Message from: {}({})", msg, msg.length());
             sb.append(msg);
@@ -109,8 +120,8 @@ class AsyncTcpClientTest {
                 emptyFuture.complete(null);
             }
         });
-
-        connect.close().join();
+        JoinableSubscriber<Void> subscriber = new JoinableSubscriber<>();
+        connect.close().subscribe(subscriber);
         emptyFuture.join();
     }
 
@@ -119,42 +130,15 @@ class AsyncTcpClientTest {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
         List<Pair<Integer, AsyncSocket>> collect = IntStream.range(0, CNT)
                 .mapToObj(i -> new Pair<>(i, client.connect(addr))).collect(Collectors.toList());
-        ExecutorService executorService = Executors.newFixedThreadPool(CNT, new ThreadFactory() {
-            final AtomicInteger idx = new AtomicInteger();
+        ExecutorService executorService = Executors.newFixedThreadPool(CNT, THREAD_FACTORY);
 
-            @Override
-            public Thread newThread(@NotNull Runnable runnable) {
-                Thread thread = new Thread(runnable, "executor-" + idx.getAndIncrement());
-                thread.setDaemon(true);
-
-                return thread;
-            }
-        });
-
-        List<Future<Boolean>> futures = executorService.invokeAll(collect.stream()
+        List<Future<Boolean>> futures = collect.stream()
                 .map(p -> {
                     AsyncSocket connect = p.getSecond();
                     int idx = p.getFirst();
                     return (Callable<Boolean>) () -> {
                         try {
-                            DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
-                            Publisher<DataBuffer> read = connect.read();
-                            read.subscribe(dataBufferSubscriber);
-                            String test = "test" + idx;
-                            StringBuilder sb = new StringBuilder();
-                            int cnt = 10;
-                            for (int i = 0; i < cnt; i++) {
-
-                                Void j = connect.write(EmptyDataBuffer.INSTANCE.append(test)).join();
-                                String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
-                                logger.trace("recv Message from: {}({})", msg, msg.length());
-                                sb.append(msg);
-                                assertThat(test).isEqualTo(msg);
-                            }
-                            assertThat(sb.toString()).isEqualTo(StringsKt.repeat(test, cnt));
-                            logger.info("complete");
-                            connect.close().join();
-
+                            test();
                             return true;
                         } catch (Exception e) {
                             logger.error("Fail test", e);
@@ -162,12 +146,13 @@ class AsyncTcpClientTest {
                         }
                     };
                 })
-                .collect(Collectors.toList()), 1000, TimeUnit.SECONDS);
+                .map(executorService::submit)
+                .collect(Collectors.toList());
 
         assertThat(futures.stream().map(f -> {
             try {
-                return f.get();
-            } catch (InterruptedException | ExecutionException e) {
+                return f.get(1000, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException | ExecutionException | TimeoutException e) {
                 throw new IllegalStateException(e);
             }
         })).allMatch(Boolean.TRUE::equals);
