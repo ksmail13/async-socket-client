@@ -1,6 +1,6 @@
 package io.github.ksmail13.client
 
+import io.github.ksmail13.publisher.EmptyPublisher
 import java.nio.ByteBuffer
-import java.util.concurrent.CompletableFuture
 
-typealias WriteInfo = Pair<ByteBuffer, CompletableFuture<Void>>
+typealias WriteInfo = Pair<ByteBuffer, EmptyPublisher>
