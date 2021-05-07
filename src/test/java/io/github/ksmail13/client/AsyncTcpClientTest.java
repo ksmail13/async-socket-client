@@ -4,6 +4,8 @@ import io.github.ksmail13.buffer.DataBuffer;
 import io.github.ksmail13.buffer.EmptyDataBuffer;
 import io.github.ksmail13.server.EchoServer;
 import io.github.ksmail13.utils.JoinableSubscriber;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Single;
 import kotlin.Pair;
 import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NotNull;
@@ -70,33 +72,47 @@ class AsyncTcpClientTest {
 
     @Test
     void test() {
-        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-        AsyncSocket connect = client.connect(addr);
+
         DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
-        Publisher<DataBuffer> read = connect.read();
-        read.subscribe(dataBufferSubscriber);
-        String test = "test";
-        StringBuilder sb = new StringBuilder();
-        int cnt = 10;
-        for (int i = 0; i < cnt; i++) {
-            JoinableSubscriber<Void> joinableSubscriber = new JoinableSubscriber<>();
-            connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).subscribe(joinableSubscriber);
-            joinableSubscriber.join();
-            String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
-            logger.info("recv Message from: {}({})", msg, msg.length());
-            sb.append(msg);
-            assertThat(test).isEqualTo(msg);
-        }
-        assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
-        logger.info("complete");
+        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
+
+        List<Boolean> compares = Single.fromPublisher(client.connect(addr))
+                .flatMap(socket ->
+                        Flowable.range(0, 10)
+                                .flatMap((i) -> socket.write(EmptyDataBuffer.INSTANCE.append("test")))
+                                .flatMap((v) -> socket.read())
+                                .map(buf -> new String(buf.toBuffer().array()))
+                                .map("test"::equals)
+                                .toList())
+                .blockingGet();
+
+        assertThat(compares).containsOnly(true);
+//
+//        AsyncSocket connect = Single.fromPublisher(client.connect(addr)).blockingGet();
+//
+//
+//        String test = "test";
+//        StringBuilder sb = new StringBuilder();
+//        int cnt = 1;
+//        for (int i = 0; i < cnt; i++) {
+//            JoinableSubscriber<Void> joinableSubscriber = new JoinableSubscriber<>();
+//            connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).subscribe(joinableSubscriber);
+//            joinableSubscriber.join();
+//            String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
+//            logger.info("recv Message from: {}({})", msg, msg.length());
+//            sb.append(msg);
+//            assertThat(test).isEqualTo(msg);
+//        }
+//        assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
+//        logger.info("complete");
     }
 
     @Test
     @Timeout(value = 1)
     void closeTest() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-        AsyncSocket connect = client.connect(addr);
-        DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
+
+        AsyncSocket connect = Single.fromPublisher(client.connect(addr)).blockingGet();
         Publisher<DataBuffer> read = connect.read();
         CompletableFuture<Void> emptyFuture = new CompletableFuture<>();
         read.subscribe(new Subscriber<DataBuffer>() {
@@ -128,8 +144,9 @@ class AsyncTcpClientTest {
     @Test
     void testMulti() throws InterruptedException {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-        List<Pair<Integer, AsyncSocket>> collect = IntStream.range(0, CNT)
-                .mapToObj(i -> new Pair<>(i, client.connect(addr))).collect(Collectors.toList());
+        List<Pair<Integer, AsyncSocket>> collect = Flowable.fromStream(IntStream.range(0, CNT).boxed())
+                .flatMap(i -> Single.fromPublisher(client.connect(addr)).map(socket -> new Pair<>(i, socket)).toFlowable())
+                .collect(Collectors.toList()).blockingGet();
         ExecutorService executorService = Executors.newFixedThreadPool(CNT, THREAD_FACTORY);
 
         List<Future<Boolean>> futures = collect.stream()
