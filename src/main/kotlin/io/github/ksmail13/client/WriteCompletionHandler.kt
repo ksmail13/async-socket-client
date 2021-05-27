@@ -1,9 +1,10 @@
-package io.github.ksmail13.publisher
+package io.github.ksmail13.client
 
+import io.github.ksmail13.publisher.EmptyPublisher
 import org.slf4j.Logger
 import java.nio.channels.CompletionHandler
 
-class WriteCompletionHandler(private val logger: Logger): CompletionHandler<Int, EmptyPublisher> {
+internal class WriteCompletionHandler(private val logger: Logger): CompletionHandler<Int, EmptyPublisher> {
 
     override fun completed(result: Int?, attachment: EmptyPublisher?) {
         logger.debug("write success {} bytes", result)

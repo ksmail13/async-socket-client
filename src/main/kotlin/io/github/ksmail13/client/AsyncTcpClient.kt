@@ -7,7 +7,6 @@ import java.net.SocketAddress
 import java.nio.channels.AsynchronousSocketChannel
 import java.nio.channels.CompletionHandler
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 class AsyncTcpClient(private val option: AsyncTcpClientOption = AsyncTcpClientOption(2)) {
 
@@ -17,22 +16,6 @@ class AsyncTcpClient(private val option: AsyncTcpClientOption = AsyncTcpClientOp
 
     private val socketMap: MutableMap<SocketAddress, AsyncSocketImplKt> = ConcurrentHashMap()
 
-    private val executorService = option.executor
-    private val readerThread = Thread({
-        while (running.get()) {
-            socketMap.forEach { (addr, socket) ->
-                log.debug("try read {}", addr)
-                executorService.execute { socket.socketRead() }
-            }
-        }
-    }, "reader")
-    private val running = AtomicBoolean(true)
-
-    init {
-        readerThread.isDaemon = true
-        readerThread.start()
-    }
-
     fun connect(addr: SocketAddress): Publisher<AsyncSocket> {
         val asocket = AsynchronousSocketChannel.open(option.asyncGroup)
         val pub = SimplePublisher<AsyncSocket>()
@@ -41,7 +24,6 @@ class AsyncTcpClient(private val option: AsyncTcpClientOption = AsyncTcpClientOp
     }
 
     fun close() {
-        running.set(false)
         socketMap.forEach { (_, v) -> v.close() }
         socketMap.clear()
     }

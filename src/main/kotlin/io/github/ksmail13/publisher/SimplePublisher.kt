@@ -3,45 +3,44 @@ package io.github.ksmail13.publisher
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
-import java.lang.IllegalStateException
-import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater
 
 /**
  * 단순한 형태의 publisher
  */
 class SimplePublisher<T> : Publisher<T> {
 
-    @Volatile
-    private var subscriber: Subscriber<T>? = null
-    private val SUBSCRIBER: AtomicReferenceFieldUpdater<SimplePublisher<*>, Subscriber<*>> =
-        AtomicReferenceFieldUpdater.newUpdater(SimplePublisher::class.java, Subscriber::class.java, "subscriber")
-
+    private val subscriber: AtomicReference<Subscriber<in T>> = AtomicReference()
     private val value: AtomicReference<T> = AtomicReference()
     private val error: AtomicReference<Throwable> = AtomicReference()
     private val complete: AtomicBoolean = AtomicBoolean(false)
 
+    @Synchronized
     override fun subscribe(s: Subscriber<in T>?) {
-        if (SUBSCRIBER.get(this) != null) {
+        if (subscriber.get() != null) {
             throw IllegalStateException("Already subscribe")
         }
-        SUBSCRIBER.set(this, s)
-        s?.onSubscribe(SimpleSubscription)
+        if (s == null) {
+            return;
+        }
+
+        subscriber.set(s)
+        s.onSubscribe(SimpleSubscription)
         if (complete.get()) {
             val v = value.get()
             if (v != null) {
-                s?.onNext(v)
+                s.onNext(v)
             } else {
-                s?.onError(error.get())
+                s.onError(error.get())
             }
-            s?.onComplete()
+            s.onComplete()
         }
     }
 
+    @Synchronized
     fun push(t: T): Unit =
-        when (val s = SUBSCRIBER.get(this)) {
+        when (val s = subscriber.get()) {
             null -> {
                 value.set(t)
             }
@@ -50,8 +49,9 @@ class SimplePublisher<T> : Publisher<T> {
             }
         }
 
+    @Synchronized
     fun error(t: Throwable?): Unit =
-        when (val s = SUBSCRIBER.get(this)) {
+        when (val s = subscriber.get()) {
             null -> {
                 error.set(t)
                 complete.set(true)
@@ -62,7 +62,7 @@ class SimplePublisher<T> : Publisher<T> {
         }
 
     fun close(): Unit =
-        when (val s = SUBSCRIBER.get(this)) {
+        when (val s = subscriber.get()) {
             null -> complete.set(true)
             else -> {
                 s.onComplete()
