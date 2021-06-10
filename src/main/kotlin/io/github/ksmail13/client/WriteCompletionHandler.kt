@@ -1,19 +1,22 @@
 package io.github.ksmail13.client
 
-import io.github.ksmail13.publisher.EmptyPublisher
+import org.reactivestreams.Subscriber
 import org.slf4j.Logger
 import java.nio.channels.CompletionHandler
 
-internal class WriteCompletionHandler(private val logger: Logger): CompletionHandler<Int, EmptyPublisher> {
+internal class WriteCompletionHandler(
+    private val logger: Logger
+): CompletionHandler<Int, Subscriber<in Void>> {
 
-    override fun completed(result: Int?, attachment: EmptyPublisher?) {
+    override fun completed(result: Int?, attachment: Subscriber<in Void>?) {
         logger.debug("write success {} bytes", result)
-        attachment?.complete()
+        attachment?.onNext(null)
+        attachment?.onComplete()
     }
 
-    override fun failed(exc: Throwable?, attachment: EmptyPublisher?) {
+    override fun failed(exc: Throwable?, attachment: Subscriber<in Void>?) {
         logger.error("complete with fail", exc)
         if (exc == null) return
-        attachment?.error(exc)
+        attachment?.onError(exc)
     }
 }

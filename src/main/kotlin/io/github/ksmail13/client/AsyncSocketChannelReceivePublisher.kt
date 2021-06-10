@@ -1,8 +1,6 @@
 package io.github.ksmail13.client
 
 import io.github.ksmail13.buffer.DataBuffer
-import io.github.ksmail13.common.BufferFactory
-import io.github.ksmail13.common.DefaultBufferFactory
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
@@ -11,11 +9,6 @@ import org.slf4j.LoggerFactory
 import java.nio.channels.AsynchronousSocketChannel
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-
-internal data class AsyncSocketChannelPublisherOption(val socketChannel: AsynchronousSocketChannel,
-                                             val socketOption: AsyncTcpClientOption,
-                                             val bufferFactory: BufferFactory = DefaultBufferFactory,
-                                             val closeOnCancel: Boolean = false)
 
 /**
  * [AsynchronousSocketChannel]의 Read 연산 결과를 publish하는 [Publisher]

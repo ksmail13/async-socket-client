@@ -13,7 +13,7 @@ internal class AsyncSocketImplKt
 @JvmOverloads constructor(
     private val socketOption: AsyncTcpClientOption,
     private val socket: AsynchronousSocketChannel,
-    bufferFactory: BufferFactory = DefaultBufferFactory,
+    private val bufferFactory: BufferFactory = DefaultBufferFactory,
 ) : AsyncSocket {
 
     private val readFuture: Publisher<DataBuffer> = AsyncSocketChannelReceivePublisher(
@@ -46,17 +46,15 @@ internal class AsyncSocketImplKt
             return EmptyPublisher(true)
         }
 
-        val future = EmptyPublisher()
         val data = buffer.toBuffer()
         logger.debug("try write data {} bytes", data.remaining())
-        socket.write(
-            data,
-            socketOption.timeout,
-            socketOption.timeoutUnit,
-            future,
-            WriteCompletionHandler(logger)
-        )
-        return future
+
+        return AsyncSocketChannelSendPublisher(AsyncSocketChannelPublisherOption(
+            socketChannel = socket,
+            socketOption = socketOption,
+            bufferFactory = bufferFactory,
+            closeOnCancel = false
+        ), buffer)
     }
 
     override fun close(): Publisher<Void> {

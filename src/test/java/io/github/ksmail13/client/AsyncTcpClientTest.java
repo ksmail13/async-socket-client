@@ -73,7 +73,6 @@ class AsyncTcpClientTest {
     @Test
     void test() {
 
-        DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
 
         List<Boolean> compares = Single.fromPublisher(client.connect(addr))
