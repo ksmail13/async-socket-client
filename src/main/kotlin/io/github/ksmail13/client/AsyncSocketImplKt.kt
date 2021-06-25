@@ -16,15 +16,6 @@ internal class AsyncSocketImplKt
     private val bufferFactory: BufferFactory = DefaultBufferFactory,
 ) : AsyncSocket {
 
-    private val readFuture: Publisher<DataBuffer> = AsyncSocketChannelReceivePublisher(
-        AsyncSocketChannelPublisherOption(
-            socketChannel = socket,
-            socketOption = socketOption,
-            bufferFactory = bufferFactory,
-            closeOnCancel = false
-        )
-    )
-
     companion object {
         private val logger = LoggerFactory.getLogger(AsyncSocketImplKt::class.java)
         private val closeHandler =
@@ -38,7 +29,14 @@ internal class AsyncSocketImplKt
     }
 
     override fun read(): Publisher<DataBuffer> {
-        return readFuture
+        return AsyncSocketChannelReceivePublisher(
+            AsyncSocketChannelPublisherOption(
+                socketChannel = socket,
+                socketOption = socketOption,
+                bufferFactory = bufferFactory,
+                closeOnCancel = false
+            )
+        )
     }
 
     override fun write(buffer: DataBuffer?): Publisher<Void> {

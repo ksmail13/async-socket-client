@@ -23,7 +23,7 @@ internal class AsyncSocketChannelSendPublisher(
 
     @Synchronized
     override fun subscribe(s: Subscriber<in Void>?) {
-        if (subscriber.get() == null) throw IllegalStateException("Already subscribe")
+//        if (subscriber.get() == null) throw IllegalStateException("Already subscribe")
 
         subscriber.set(s)
         s?.onSubscribe(WriteSubscription())
