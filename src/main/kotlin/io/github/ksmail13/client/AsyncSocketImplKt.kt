@@ -4,6 +4,7 @@ import io.github.ksmail13.buffer.DataBuffer
 import io.github.ksmail13.common.BufferFactory
 import io.github.ksmail13.common.DefaultBufferFactory
 import io.github.ksmail13.publisher.EmptyPublisher
+import io.github.ksmail13.publisher.SimplePublisher
 import org.reactivestreams.Publisher
 import org.slf4j.LoggerFactory
 import java.nio.channels.AsynchronousSocketChannel
@@ -39,9 +40,12 @@ internal class AsyncSocketImplKt
         )
     }
 
-    override fun write(buffer: DataBuffer?): Publisher<Void> {
+    override fun write(buffer: DataBuffer?): Publisher<Int> {
         if (buffer == null) {
-            return EmptyPublisher(true)
+            val simplePublisher = SimplePublisher<Int>()
+            simplePublisher.push(0)
+            simplePublisher.close()
+            return simplePublisher
         }
 
         val data = buffer.toBuffer()
@@ -58,7 +62,9 @@ internal class AsyncSocketImplKt
     override fun close(): Publisher<Void> {
         val future = EmptyPublisher()
         return try {
-            socket.close()
+            if (!close) {
+                socket.close()
+            }
             closeHandler.execute { future.complete() }
             future
         } catch (e: Exception) {

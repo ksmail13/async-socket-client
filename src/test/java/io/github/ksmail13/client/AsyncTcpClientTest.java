@@ -1,23 +1,18 @@
 package io.github.ksmail13.client;
 
-import io.github.ksmail13.buffer.DataBuffer;
 import io.github.ksmail13.buffer.EmptyDataBuffer;
 import io.github.ksmail13.server.EchoServer;
 import io.github.ksmail13.utils.JoinableSubscriber;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import kotlin.Pair;
-import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.*;
-import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -75,69 +70,29 @@ class AsyncTcpClientTest {
 
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
 
-        List<Boolean> compares = Single.fromPublisher(client.connect(addr))
+        List<String> compares = Single.fromPublisher(client.connect(addr))
                 .flatMap(socket ->
-                        Flowable.range(0, 10)
+                        Flowable.range(0, 1)
                                 .flatMap((i) -> socket.write(EmptyDataBuffer.INSTANCE.append("test")))
                                 .flatMap((v) -> socket.read())
                                 .map(buf -> new String(buf.toBuffer().array()))
-                                .map("test"::equals)
+                                .repeat(10)
                                 .toList())
                 .blockingGet();
 
-        assertThat(compares).containsOnly(true);
-//
-//        AsyncSocket connect = Single.fromPublisher(client.connect(addr)).blockingGet();
-//
-//
-//        String test = "test";
-//        StringBuilder sb = new StringBuilder();
-//        int cnt = 1;
-//        for (int i = 0; i < cnt; i++) {
-//            JoinableSubscriber<Void> joinableSubscriber = new JoinableSubscriber<>();
-//            connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).subscribe(joinableSubscriber);
-//            joinableSubscriber.join();
-//            String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
-//            logger.info("recv Message from: {}({})", msg, msg.length());
-//            sb.append(msg);
-//            assertThat(test).isEqualTo(msg);
-//        }
-//        assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
-//        logger.info("complete");
+        assertThat(compares).containsOnly("test");
     }
 
     @Test
     @Timeout(value = 1)
     void closeTest() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-
         AsyncSocket connect = Single.fromPublisher(client.connect(addr)).blockingGet();
-        Publisher<DataBuffer> read = connect.read();
-        CompletableFuture<Void> emptyFuture = new CompletableFuture<>();
-        read.subscribe(new Subscriber<DataBuffer>() {
-            @Override
-            public void onSubscribe(Subscription s) {
-
-            }
-
-            @Override
-            public void onNext(DataBuffer byteBuffer) {
-
-            }
-
-            @Override
-            public void onError(Throwable t) {
-                emptyFuture.completeExceptionally(t);
-            }
-
-            @Override
-            public void onComplete() {
-                emptyFuture.complete(null);
-            }
-        });
-        JoinableSubscriber<Void> subscriber = new JoinableSubscriber<>();
-        connect.close().subscribe(subscriber);
-        emptyFuture.join();
+        Single.fromPublisher(connect.write(EmptyDataBuffer.INSTANCE.append("quit"))).blockingGet();
+        Observable.fromPublisher(connect.read()).blockingSubscribe();
+        JoinableSubscriber<Void> s = new JoinableSubscriber<>();
+        connect.close().subscribe(s);
+        s.join();
     }
 
     @Test
@@ -148,60 +103,29 @@ class AsyncTcpClientTest {
                 .collect(Collectors.toList()).blockingGet();
         ExecutorService executorService = Executors.newFixedThreadPool(CNT, THREAD_FACTORY);
 
-        List<Future<Boolean>> futures = collect.stream()
+        List<Boolean> futures = collect.parallelStream()
                 .map(p -> {
                     AsyncSocket connect = p.getSecond();
                     int idx = p.getFirst();
-                    return (Callable<Boolean>) () -> {
-                        try {
-                            test();
-                            return true;
-                        } catch (Exception e) {
-                            logger.error("Fail test", e);
-                            return false;
-                        }
-                    };
+                    String target = "test" + idx;
+                    try {
+                        List<String> strings = Flowable.just(0)
+                                .flatMap(i -> connect.write(EmptyDataBuffer.INSTANCE.append(target)))
+                                .flatMap(i -> connect.read())
+                                .map(r -> new String(r.toBuffer().array()))
+                                .repeat(10)
+                                .toList()
+                                .blockingGet();
+                        strings.forEach(s -> assertThat(s).isEqualTo(target));
+                        return true;
+                    } catch (Exception e) {
+                        logger.error("Fail test", e);
+                        return false;
+                    }
                 })
-                .map(executorService::submit)
                 .collect(Collectors.toList());
 
-        assertThat(futures.stream().map(f -> {
-            try {
-                return f.get(1000, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new IllegalStateException(e);
-            }
-        })).allMatch(Boolean.TRUE::equals);
+        assertThat(futures).allMatch(Boolean.TRUE::equals);
     }
 
-    static class DataBufferSubscriber implements Subscriber<DataBuffer> {
-
-        private final CompletableFuture<byte[]> future = new CompletableFuture<>();
-
-        @Override
-        public void onSubscribe(Subscription s) {
-
-        }
-
-        @Override
-        public void onNext(DataBuffer byteBuffer) {
-            ByteBuffer buffer = byteBuffer.toBuffer();
-            byte[] array = buffer.compact().array();
-            future.obtrudeValue(array);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onComplete() {
-
-        }
-
-        public CompletableFuture<byte[]> getFuture() {
-            return future;
-        }
-    }
 }

@@ -64,12 +64,19 @@ public class EchoServer implements Runnable {
                         socket.close();
                         break;
                     }
-                    byte[] readed = new byte[read];
-                    System.arraycopy(bytes, 0, readed, 0, read);
-                    logger.info("server recv : {} {}", read, new String(readed));
-                    OutputStream outputStream = socket.getOutputStream();
-                    outputStream.write(readed);
-                    outputStream.flush();
+
+                    byte[] readBuffer = new byte[read];
+                    System.arraycopy(bytes, 0, readBuffer, 0, read);
+                    String readString = new String(readBuffer);
+                    logger.info("server recv : {} {}", read, readString);
+                    if ("quit".equals(readString)) {
+                        socket.close();
+                        break;
+                    } else {
+                        OutputStream outputStream = socket.getOutputStream();
+                        outputStream.write(readBuffer);
+                        outputStream.flush();
+                    }
                 } catch (IOException e) {
                     throw new IllegalStateException(e);
                 }

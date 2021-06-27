@@ -46,15 +46,8 @@ internal class AsyncSocketChannelReceivePublisher(
         private val running: AtomicBoolean = AtomicBoolean(true)
 
         override fun request(n: Long) {
-            if (n == Long.MAX_VALUE) {
-                while (running.get()) {
-                    requestRead()
-                }
-            } else {
-
-                for (i in 0 until n) {
-                    requestRead()
-                }
+            if (running.getAndSet(false)) {
+                requestRead()
             }
         }
 
@@ -64,14 +57,14 @@ internal class AsyncSocketChannelReceivePublisher(
 
             if (!socketChannel.isOpen) {
                 cancel()
-                return;
+                return
             }
-
+            logger.debug("read request")
             socketChannel.read(createBuffer,
                 option.socketOption.timeout,
                 option.socketOption.timeoutUnit,
                 createBuffer to subscriber,
-                ReadCompletionHandler(logger)
+                ReadCompletionHandler(logger, socketChannel)
             )
         }
 

@@ -12,17 +12,17 @@ import java.util.concurrent.atomic.AtomicReference
 internal class AsyncSocketChannelSendPublisher(
     private val option: AsyncSocketChannelPublisherOption,
     private val data: DataBuffer
-    ): Publisher<Void> {
+    ): Publisher<Int> {
 
     companion object {
         val logger: Logger = LoggerFactory.getLogger(AsyncSocketChannelSendPublisher::class.java)
     }
 
-    private val subscriber = AtomicReference<Subscriber<in Void>>()
+    private val subscriber = AtomicReference<Subscriber<in Int>>()
     private val done = AtomicBoolean(false)
 
     @Synchronized
-    override fun subscribe(s: Subscriber<in Void>?) {
+    override fun subscribe(s: Subscriber<in Int>?) {
 //        if (subscriber.get() == null) throw IllegalStateException("Already subscribe")
 
         subscriber.set(s)
@@ -36,7 +36,7 @@ internal class AsyncSocketChannelSendPublisher(
             if (done.get()) {
                 return
             }
-
+            logger.debug("write buffer")
             done.set(true)
             option.socketChannel.write(data.toBuffer(),
                 option.socketOption.timeout,

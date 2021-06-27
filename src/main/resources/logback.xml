@@ -5,7 +5,7 @@
         </encoder>
     </appender>
 
-    <logger name="io.github.ksmail13" level="INFO" additivity="false">
+    <logger name="io.github.ksmail13" level="DEBUG" additivity="false">
         <appender-ref ref="CONSOLE" />
     </logger>
     <root level="INFO">

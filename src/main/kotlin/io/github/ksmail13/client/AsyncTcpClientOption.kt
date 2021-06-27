@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 data class AsyncTcpClientOption(
     private val thread: Int = 0,
     private var executorService: ExecutorService? = null,
-    internal val timeout: Long = 1000L,
+    internal val timeout: Long = 2000L,
     internal val timeoutUnit: TimeUnit = TimeUnit.MILLISECONDS
     ) {
 
