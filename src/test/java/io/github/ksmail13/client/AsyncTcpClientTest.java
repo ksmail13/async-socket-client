@@ -96,12 +96,11 @@ class AsyncTcpClientTest {
     }
 
     @Test
-    void testMulti() throws InterruptedException {
+    void testMulti() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
         List<Pair<Integer, AsyncSocket>> collect = Flowable.fromStream(IntStream.range(0, CNT).boxed())
                 .flatMap(i -> Single.fromPublisher(client.connect(addr)).map(socket -> new Pair<>(i, socket)).toFlowable())
                 .collect(Collectors.toList()).blockingGet();
-        ExecutorService executorService = Executors.newFixedThreadPool(CNT, THREAD_FACTORY);
 
         List<Boolean> futures = collect.parallelStream()
                 .map(p -> {
