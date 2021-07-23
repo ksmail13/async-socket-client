@@ -74,7 +74,7 @@ class AsyncTcpClientTest {
                 .flatMap(socket ->
                         Flowable.range(0, 1)
                                 .flatMap((i) -> socket.write(EmptyDataBuffer.INSTANCE.append("test")))
-                                .flatMap((v) -> socket.read())
+                                .flatMap((v) -> ReadHelperKt.once(socket.read()))
                                 .map(buf -> new String(buf.toBuffer().array()))
                                 .repeat(10)
                                 .toList())
@@ -110,7 +110,7 @@ class AsyncTcpClientTest {
                     try {
                         List<String> strings = Flowable.just(0)
                                 .flatMap(i -> connect.write(EmptyDataBuffer.INSTANCE.append(target)))
-                                .flatMap(i -> connect.read())
+                                .flatMap(i -> ReadHelperKt.once(connect.read()))
                                 .map(r -> new String(r.toBuffer().array()))
                                 .repeat(10)
                                 .toList()

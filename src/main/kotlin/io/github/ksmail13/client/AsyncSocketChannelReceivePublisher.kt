@@ -14,6 +14,8 @@ import java.nio.channels.InterruptedByTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * [AsynchronousSocketChannel]의 Read 연산 결과를 publish하는 [Publisher]
@@ -24,26 +26,69 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal class AsyncSocketChannelReceivePublisher(
     private val option: AsyncSocketChannelPublisherOption
-) : Publisher<DataBuffer> {
+) : Publisher<DataBuffer>, Subscriber<DataBuffer> {
 
     companion object {
         val logger: Logger = LoggerFactory.getLogger(AsyncSocketChannelReceivePublisher::class.java)
     }
 
     private val subscriber: AtomicReference<Subscriber<in DataBuffer>> = AtomicReference()
+    private val subscription: AtomicReference<Subscription> = AtomicReference()
 
-    @Volatile
-    private var subscribing: Boolean = false
+    private val request: AtomicLong = AtomicLong()
 
-    @Synchronized
+    private val lock = ReentrantLock()
+
     override fun subscribe(s: Subscriber<in DataBuffer>?) {
         if (s == null) return
-        if (subscribing) s.onError(IllegalStateException("Already subscribing"))
-        val repeatableSubscriber = RepeatableSubscriber()
-        subscriber.set(repeatableSubscriber)
-        repeatableSubscriber.onSubscribe(SocketSubscription(s))
-        repeatableSubscriber.subscribe(s)
-        subscribing = true
+        lock.withLock {
+            if (!subscriber.compareAndSet(null, s)) {
+                complete()
+                subscriber.set(s)
+            }
+            val socketSubscription = SocketSubscription(this)
+            this.onSubscribe(socketSubscription)
+            s.onSubscribe(socketSubscription)
+        }
+    }
+
+    override fun onSubscribe(s: Subscription?) {
+        subscription.set(s)
+    }
+
+    override fun onNext(t: DataBuffer?) {
+        lock.withLock {
+            requireNotNull(subscriber.get()) {"subscriber empty"}.onNext(t)
+            val remain = request.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
+            if (remain > 0) {
+                logger.debug("call downstream {}", remain)
+                // 재요청하면서 다시 필요 처리량이 늘지 않도록 0으로 호출
+                subscription.get().request(0)
+            } else {
+                logger.debug("clear downstream {}", remain)
+                complete()
+            }
+        }
+    }
+
+    override fun onError(t: Throwable?) {
+        lock.withLock {
+            subscriber.get().onError(t)
+            subscriber.set(null)
+            request.set(0)
+        }
+    }
+
+    override fun onComplete() {
+        lock.withLock {
+            complete()
+        }
+    }
+
+    private fun complete() {
+        subscriber.get().onComplete()
+        subscriber.set(null)
+        request.set(0)
     }
 
     private inner class SocketSubscription(private val subscriber: Subscriber<in DataBuffer>) :
@@ -52,11 +97,22 @@ internal class AsyncSocketChannelReceivePublisher(
         private val running: AtomicBoolean = AtomicBoolean(true)
 
         override fun request(n: Long) {
-            requestRead()
+            val remain = request.updateAndGet { u ->
+                when {
+                    n == Long.MAX_VALUE || u == Long.MAX_VALUE -> Long.MAX_VALUE
+                    (u + n) < 0 -> Long.MAX_VALUE - 2
+                    else -> u + n - 1
+                }
+            }
+
+            logger.debug("request {}, {} reads remain", n, remain)
+            if (remain >= 0) {
+                requestRead()
+            }
         }
 
         private fun requestRead() {
-            val (socketChannel, _, bufferFactory) = option;
+            val (socketChannel, _, bufferFactory) = option
             val createBuffer = bufferFactory.createBuffer()
 
             if (!socketChannel.isOpen) {
@@ -78,7 +134,7 @@ internal class AsyncSocketChannelReceivePublisher(
             if (option.closeOnCancel) {
                 option.socketChannel.close()
             }
-            subscriber.onComplete()
+            request.set(0)
         }
 
 
@@ -111,70 +167,5 @@ internal class AsyncSocketChannelReceivePublisher(
                 }
             }
         }
-
-
-    }
-}
-
-class RepeatableSubscriber : Publisher<DataBuffer>, Subscriber<DataBuffer> {
-
-    companion object {
-        val logger: Logger = LoggerFactory.getLogger(RepeatableSubscriber::class.java)
-    }
-
-    private val subscriber: AtomicReference<Subscriber<in DataBuffer>> = AtomicReference()
-    private val subscription: AtomicReference<Subscription> = AtomicReference()
-
-    private val request: AtomicLong = AtomicLong()
-
-    override fun onSubscribe(s: Subscription?) {
-        subscription.set(s)
-    }
-
-    @Synchronized
-    override fun onNext(t: DataBuffer?) {
-        subscriber.get().onNext(t)
-        if (request.getAndDecrement() > 0) {
-            subscription.get().request(1)
-        } else {
-            onComplete()
-        }
-    }
-
-    override fun onError(t: Throwable?) {
-        subscriber.get().onError(t)
-        subscriber.set(null)
-    }
-
-    override fun onComplete() {
-        subscriber.get().onComplete()
-        subscriber.set(null)
-    }
-
-    //================== publisher =========================//
-
-    @Synchronized
-    override fun subscribe(s: Subscriber<in DataBuffer>?) {
-        if (subscriber.get() != null) {
-            s?.onError(IllegalStateException("Already subscribe"))
-            return
-        }
-
-        subscriber.set(s)
-        s?.onSubscribe(RepeatSubscription())
-    }
-
-    inner class RepeatSubscription : Subscription {
-        override fun request(n: Long) {
-            subscription.get().request(1)
-            logger.debug("request {} times read", n)
-            request.updateAndGet { u -> -1 + if ((u + n) < 0) Long.MAX_VALUE - 1 else u + n }
-        }
-
-        override fun cancel() {
-            subscription.get().cancel()
-            request.set(0)
-        }
-
     }
 }

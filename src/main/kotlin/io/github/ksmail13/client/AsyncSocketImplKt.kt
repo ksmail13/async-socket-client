@@ -29,15 +29,17 @@ internal class AsyncSocketImplKt
         if (!socket.isOpen) throw IllegalStateException("Init with closed socket")
     }
 
-    override fun read(): Publisher<DataBuffer> {
-        return AsyncSocketChannelReceivePublisher(
-            AsyncSocketChannelPublisherOption(
-                socketChannel = socket,
-                socketOption = socketOption,
-                bufferFactory = bufferFactory,
-                closeOnCancel = false
-            )
+    private val readPublisher = AsyncSocketChannelReceivePublisher(
+        AsyncSocketChannelPublisherOption(
+            socketChannel = socket,
+            socketOption = socketOption,
+            bufferFactory = bufferFactory,
+            closeOnCancel = false
         )
+    )
+
+    override fun read(): Publisher<DataBuffer> {
+        return readPublisher
     }
 
     override fun write(buffer: DataBuffer?): Publisher<Int> {
