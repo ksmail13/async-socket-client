@@ -4,6 +4,7 @@ import io.github.ksmail13.buffer.DataBuffer
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
+import org.slf4j.LoggerFactory
 import java.util.concurrent.atomic.AtomicReference
 
 private class CountFilteredSubscription(val subscription: Subscription, val filter: Function1<Long, Long>): Subscription {
@@ -48,8 +49,13 @@ private class CountFilteredSubscriber(private val filter: Function1<Long, Long>)
     }
 }
 
+val logger = LoggerFactory.getLogger("io.github.ksmail13.client.ReadHelper")
+
 fun Publisher<DataBuffer>.once(): Publisher<DataBuffer> =
-    CountFilteredSubscriber { 1 }.also { this.subscribe(it) }
+    CountFilteredSubscriber { 1 }.also {
+        logger.debug("set subscribe {} -> {}", it, this)
+        this.subscribe(it)
+    }
 
 fun Publisher<DataBuffer>.infinite(): Publisher<DataBuffer> =
     CountFilteredSubscriber { Long.MAX_VALUE }.also { this.subscribe(it) }

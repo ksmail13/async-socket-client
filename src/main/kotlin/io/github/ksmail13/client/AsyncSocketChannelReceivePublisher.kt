@@ -14,8 +14,13 @@ import java.nio.channels.InterruptedByTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.Lock
+import java.util.concurrent.locks.ReadWriteLock
 import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
 import kotlin.concurrent.withLock
+import kotlin.concurrent.write
 
 /**
  * [AsynchronousSocketChannel]의 Read 연산 결과를 publish하는 [Publisher]
@@ -37,16 +42,17 @@ internal class AsyncSocketChannelReceivePublisher(
 
     private val request: AtomicLong = AtomicLong()
 
-    private val lock = ReentrantLock()
+    private val lock = ReentrantReadWriteLock()
 
     override fun subscribe(s: Subscriber<in DataBuffer>?) {
         if (s == null) return
-        lock.withLock {
+        lock.write {
             if (!subscriber.compareAndSet(null, s)) {
+                logger.debug("try subscribe but still exist")
                 complete()
                 subscriber.set(s)
             }
-            val socketSubscription = SocketSubscription(this)
+            val socketSubscription = SocketSubscription(this, lock)
             this.onSubscribe(socketSubscription)
             s.onSubscribe(socketSubscription)
         }
@@ -57,8 +63,8 @@ internal class AsyncSocketChannelReceivePublisher(
     }
 
     override fun onNext(t: DataBuffer?) {
-        lock.withLock {
-            requireNotNull(subscriber.get()) {"subscriber empty"}.onNext(t)
+        lock.read {
+            requireNotNull(subscriber.get()) { "subscriber empty" }.onNext(t)
             val remain = request.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
             if (remain > 0) {
                 logger.debug("call downstream {}", remain)
@@ -72,7 +78,7 @@ internal class AsyncSocketChannelReceivePublisher(
     }
 
     override fun onError(t: Throwable?) {
-        lock.withLock {
+        lock.read {
             subscriber.get().onError(t)
             subscriber.set(null)
             request.set(0)
@@ -80,7 +86,7 @@ internal class AsyncSocketChannelReceivePublisher(
     }
 
     override fun onComplete() {
-        lock.withLock {
+        lock.read {
             complete()
         }
     }
@@ -91,23 +97,28 @@ internal class AsyncSocketChannelReceivePublisher(
         request.set(0)
     }
 
-    private inner class SocketSubscription(private val subscriber: Subscriber<in DataBuffer>) :
+    private inner class SocketSubscription(
+        private val subscriber: Subscriber<in DataBuffer>,
+        private val lock: ReentrantReadWriteLock
+    ) :
         Subscription, CompletionHandler<Int, Pair<ByteBuffer, Subscriber<in DataBuffer>>> {
 
         private val running: AtomicBoolean = AtomicBoolean(true)
 
         override fun request(n: Long) {
-            val remain = request.updateAndGet { u ->
-                when {
-                    n == Long.MAX_VALUE || u == Long.MAX_VALUE -> Long.MAX_VALUE
-                    (u + n) < 0 -> Long.MAX_VALUE - 2
-                    else -> u + n - 1
+            lock.read {
+                val remain = request.updateAndGet { u ->
+                    when {
+                        n == Long.MAX_VALUE || u == Long.MAX_VALUE -> Long.MAX_VALUE
+                        (u + n) < 0 -> Long.MAX_VALUE - 2
+                        else -> u + n - 1
+                    }
                 }
-            }
 
-            logger.debug("request {}, {} reads remain", n, remain)
-            if (remain >= 0) {
-                requestRead()
+                logger.debug("request {}, {} reads remain", n, remain)
+                if (remain >= 0) {
+                    requestRead()
+                }
             }
         }
 
@@ -130,11 +141,13 @@ internal class AsyncSocketChannelReceivePublisher(
         }
 
         override fun cancel() {
-            running.set(false)
-            if (option.closeOnCancel) {
-                option.socketChannel.close()
+            lock.read {
+                running.set(false)
+                if (option.closeOnCancel) {
+                    option.socketChannel.close()
+                }
+                request.set(0)
             }
-            request.set(0)
         }
 
 

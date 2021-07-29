@@ -66,6 +66,8 @@ class AsyncTcpClientTest {
     }
 
     @Test
+    @RepeatedTest(10)
+    @Timeout(1)
     void test() {
 
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
