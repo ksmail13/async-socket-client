@@ -16,6 +16,7 @@ class AsyncTcpClient(private val option: AsyncTcpClientOption = AsyncTcpClientOp
 
     fun connect(addr: SocketAddress): Publisher<AsyncSocket> {
         val asocket = AsynchronousSocketChannel.open(option.asyncGroup)
+
         return AsyncSocketChannelConnectPublisher(addr,
             option,
             AsyncSocketChannelPublisherOption(asocket, option))

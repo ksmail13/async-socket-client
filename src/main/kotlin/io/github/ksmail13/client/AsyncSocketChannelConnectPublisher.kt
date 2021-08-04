@@ -20,10 +20,6 @@ internal class AsyncSocketChannelConnectPublisher(
 
     @Synchronized
     override fun subscribe(s: Subscriber<in AsyncSocket>?) {
-//        if (subscriber.get() != null) {
-//            throw IllegalStateException("already subscribe")
-//        }
-
         subscriber.set(s)
         s?.onSubscribe(ConnectionSubscription(addr, socketOption, option, s))
     }
@@ -35,21 +31,22 @@ internal class AsyncSocketChannelConnectPublisher(
         private val subscriber: Subscriber<in AsyncSocket>
     ) : Subscription, CompletionHandler<Void, ConnectionAttachment> {
 
-        private val connected = AtomicBoolean(false)
+        private val done = AtomicBoolean(false)
 
         @Synchronized
         override fun request(n: Long) {
-            if (connected.get()) return
+            if (done.get()) return
 
             val (socketChannel) = option
             socketChannel.connect(addr,
                 socketChannel to socketOption,
                 this)
 
-            connected.set(true)
+            done.set(true)
         }
 
         override fun cancel() {
+            done.set(true)
         }
 
         override fun completed(p0: Void?, p1: ConnectionAttachment?) {

@@ -9,7 +9,7 @@
         <appender-ref ref="CONSOLE" />
     </logger>
 
-    <logger name="io.github.ksmail13.client.AsyncSocketChannelReceivePublisher" level="TRACE" additivity="false">
+    <logger name="io.github.ksmail13.client.AsyncSocketChannelReceivePublisher" level="DEBUG" additivity="false">
         <appender-ref ref="CONSOLE" />
     </logger>
 

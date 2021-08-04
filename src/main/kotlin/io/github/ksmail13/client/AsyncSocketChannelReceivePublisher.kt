@@ -33,7 +33,7 @@ internal class AsyncSocketChannelReceivePublisher(
     = AtomicReferenceFieldUpdater.newUpdater(AsyncSocketChannelReceivePublisher::class.java, Subscriber::class.java, "s")
     private val subscription: AtomicReference<Subscription> = AtomicReference()
 
-    private val request: AtomicLong = AtomicLong()
+    private val remainRequest: AtomicLong = AtomicLong()
 
     override fun subscribe(s: Subscriber<in DataBuffer>?) {
         if (s == null) return
@@ -51,7 +51,7 @@ internal class AsyncSocketChannelReceivePublisher(
         logger.trace("onNext {}", this)
         val sub = getSubscriber()
         sub.onNext(t)
-        val remain = request.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
+        val remain = remainRequest.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
         if (remain > 0) {
             logger.trace("call downstream {}", remain)
             // 재요청하면서 다시 필요 처리량이 늘지 않도록 0으로 호출
@@ -63,25 +63,22 @@ internal class AsyncSocketChannelReceivePublisher(
     }
 
     override fun onError(t: Throwable?) {
-        getSubscriber().onError(t)
-        setSubscriber(null)
-        request.set(0)
+        getSubscriber().also { clear() }.onError(t)
     }
 
     override fun onComplete() {
         complete(getSubscriber())
     }
 
+    private fun clear() {
+        setSubscriber(null)
+        remainRequest.set(0)
+    }
+
     private fun complete(subscriber: Subscriber<DataBuffer>) {
-        val currSubscriber = getSubscriber()
+        // complete 전에 미리 초기화 하여 멀티스레드 환경에서 초기화가 꼬이지 않게 처리
+        clear()
         subscriber.onComplete()
-        // 이미 바뀐 경우엔 별도로 필드를 초기화하지 않는다.
-        if (currSubscriber == subscriber) {
-            setSubscriber(null)
-        } else {
-            logger.trace("Subscriber replaced {}, {}", subscriber, currSubscriber)
-        }
-        request.set(0)
     }
 
     private fun setSubscriber(sub: Subscriber<in DataBuffer>?) {
@@ -120,7 +117,7 @@ internal class AsyncSocketChannelReceivePublisher(
         private val running: AtomicBoolean = AtomicBoolean(true)
 
         override fun request(n: Long) {
-            val remain = request.updateAndGet { u ->
+            val remain = remainRequest.updateAndGet { u ->
                 when {
                     n == Long.MAX_VALUE || u == Long.MAX_VALUE -> Long.MAX_VALUE
                     (u + n) < 0 -> Long.MAX_VALUE - 2
@@ -157,7 +154,7 @@ internal class AsyncSocketChannelReceivePublisher(
             if (option.closeOnCancel) {
                 option.socketChannel.close()
             }
-            request.set(0)
+            remainRequest.set(0)
         }
 
 

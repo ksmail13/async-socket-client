@@ -57,7 +57,7 @@ class AsyncTcpClientTest {
 
     @BeforeEach
     public void init() {
-        client = new AsyncTcpClient();
+        client = new AsyncTcpClient(new AsyncTcpClientOption(2, null, 500));
     }
 
     @AfterEach
@@ -65,23 +65,29 @@ class AsyncTcpClientTest {
         client.close();
     }
 
-    @RepeatedTest(10)
+    @RepeatedTest(value = 100, name = RepeatedTest.LONG_DISPLAY_NAME)
     @Timeout(1)
+    @DisplayName("Single threaded request")
     void test() {
 
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
 
+        int cnt = 10;
         List<String> compares = Single.fromPublisher(client.connect(addr))
                 .flatMap(socket ->
-                        Flowable.range(0, 1)
-                                .flatMap((i) -> socket.write(EmptyDataBuffer.INSTANCE.append("test")))
+                        Flowable.just(socket)
+                                .flatMap((s) -> socket.write(EmptyDataBuffer.INSTANCE.append("test")))
+                                .doOnNext(i -> logger.debug("write message"))
                                 .flatMap((v) -> ReadHelperKt.once(socket.read()))
+                                .doOnNext(i -> logger.debug("read message"))
                                 .map(buf -> new String(buf.toBuffer().array()))
-                                .repeat(10)
+                                .repeat(cnt)
+                                .doOnComplete(socket::close)
+                                .doOnNext(i -> logger.debug("close socket"))
                                 .toList())
                 .blockingGet();
 
-        assertThat(compares).containsOnly("test");
+        assertThat(compares).containsOnly("test").hasSize(cnt);
     }
 
     @Test

@@ -36,7 +36,7 @@ internal class AsyncSocketChannelSendPublisher(
             if (done.get()) {
                 return
             }
-            logger.debug("write buffer")
+            logger.trace("write buffer")
             done.set(true)
             option.socketChannel.write(data.toBuffer(),
                 option.socketOption.timeout,
@@ -46,7 +46,7 @@ internal class AsyncSocketChannelSendPublisher(
         }
 
         override fun cancel() {
-            logger.debug("canceled {}", this)
+            logger.trace("canceled {}", this)
             if (option.closeOnCancel) {
                 option.socketChannel.close()
             }

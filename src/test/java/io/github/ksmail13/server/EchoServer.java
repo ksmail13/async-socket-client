@@ -59,10 +59,11 @@ public class EchoServer implements Runnable {
             while (!socket.isClosed()) {
                 try {
                     int read = socket.getInputStream().read(bytes);
-                    if (read == 0) break;
-                    if (read < 0) {
+//                    if (read == 0) break;
+                    if (read <= 0) {
+                        logger.debug("close by client with empty read {}", read);
                         socket.close();
-                        break;
+                        return;
                     }
 
                     byte[] readBuffer = new byte[read];
@@ -82,5 +83,12 @@ public class EchoServer implements Runnable {
                 }
             }
         }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(new EchoServer(Integer.parseInt(args[0])));
+        thread.start();
+
+        thread.join();
     }
 }
