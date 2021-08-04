@@ -65,7 +65,6 @@ class AsyncTcpClientTest {
         client.close();
     }
 
-    @Test
     @RepeatedTest(10)
     @Timeout(1)
     void test() {

@@ -2,25 +2,17 @@ package io.github.ksmail13.client
 
 import io.github.ksmail13.buffer.DataBuffer
 import io.github.ksmail13.buffer.EmptyDataBuffer
+import io.github.ksmail13.logging.Logging
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 import java.nio.ByteBuffer
 import java.nio.channels.AsynchronousSocketChannel
 import java.nio.channels.CompletionHandler
-import java.nio.channels.InterruptedByTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.locks.Lock
-import java.util.concurrent.locks.ReadWriteLock
-import java.util.concurrent.locks.ReentrantLock
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.read
-import kotlin.concurrent.withLock
-import kotlin.concurrent.write
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater
 
 /**
  * [AsynchronousSocketChannel]의 Read 연산 결과를 publish하는 [Publisher]
@@ -33,29 +25,22 @@ internal class AsyncSocketChannelReceivePublisher(
     private val option: AsyncSocketChannelPublisherOption
 ) : Publisher<DataBuffer>, Subscriber<DataBuffer> {
 
-    companion object {
-        val logger: Logger = LoggerFactory.getLogger(AsyncSocketChannelReceivePublisher::class.java)
-    }
+    companion object : Logging
 
-    private val subscriber: AtomicReference<Subscriber<in DataBuffer>> = AtomicReference()
+    @Volatile
+    private var s: Subscriber<in DataBuffer>? = null
+    private val subscriber: AtomicReferenceFieldUpdater<AsyncSocketChannelReceivePublisher,Subscriber<*>>
+    = AtomicReferenceFieldUpdater.newUpdater(AsyncSocketChannelReceivePublisher::class.java, Subscriber::class.java, "s")
     private val subscription: AtomicReference<Subscription> = AtomicReference()
 
     private val request: AtomicLong = AtomicLong()
 
-    private val lock = ReentrantReadWriteLock()
-
     override fun subscribe(s: Subscriber<in DataBuffer>?) {
         if (s == null) return
-        lock.write {
-            if (!subscriber.compareAndSet(null, s)) {
-                logger.debug("try subscribe but still exist")
-                complete()
-                subscriber.set(s)
-            }
-            val socketSubscription = SocketSubscription(this, lock)
-            this.onSubscribe(socketSubscription)
-            s.onSubscribe(socketSubscription)
-        }
+        setSubscriber(s)
+        val socketSubscription = SocketSubscription(this)
+        this.onSubscribe(socketSubscription)
+        s.onSubscribe(socketSubscription)
     }
 
     override fun onSubscribe(s: Subscription?) {
@@ -63,62 +48,89 @@ internal class AsyncSocketChannelReceivePublisher(
     }
 
     override fun onNext(t: DataBuffer?) {
-        lock.read {
-            requireNotNull(subscriber.get()) { "subscriber empty" }.onNext(t)
-            val remain = request.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
-            if (remain > 0) {
-                logger.debug("call downstream {}", remain)
-                // 재요청하면서 다시 필요 처리량이 늘지 않도록 0으로 호출
-                subscription.get().request(0)
-            } else {
-                logger.debug("clear downstream {}", remain)
-                complete()
-            }
+        logger.trace("onNext {}", this)
+        val sub = getSubscriber()
+        sub.onNext(t)
+        val remain = request.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
+        if (remain > 0) {
+            logger.trace("call downstream {}", remain)
+            // 재요청하면서 다시 필요 처리량이 늘지 않도록 0으로 호출
+            subscription.get().request(0)
+        } else {
+            logger.trace("clear downstream {}", remain)
+            complete(sub)
         }
     }
 
     override fun onError(t: Throwable?) {
-        lock.read {
-            subscriber.get().onError(t)
-            subscriber.set(null)
-            request.set(0)
-        }
-    }
-
-    override fun onComplete() {
-        lock.read {
-            complete()
-        }
-    }
-
-    private fun complete() {
-        subscriber.get().onComplete()
-        subscriber.set(null)
+        getSubscriber().onError(t)
+        setSubscriber(null)
         request.set(0)
     }
 
+    override fun onComplete() {
+        complete(getSubscriber())
+    }
+
+    private fun complete(subscriber: Subscriber<DataBuffer>) {
+        val currSubscriber = getSubscriber()
+        subscriber.onComplete()
+        // 이미 바뀐 경우엔 별도로 필드를 초기화하지 않는다.
+        if (currSubscriber == subscriber) {
+            setSubscriber(null)
+        } else {
+            logger.trace("Subscriber replaced {}, {}", subscriber, currSubscriber)
+        }
+        request.set(0)
+    }
+
+    private fun setSubscriber(sub: Subscriber<in DataBuffer>?) {
+        if (sub == null) {
+            if (log.isTraceEnabled) {
+                log.trace("clear subscriber")
+            }
+            subscriber.set(this, sub)
+            return
+        }
+
+        if (!subscriber.compareAndSet(this, null, sub)) {
+            logger.trace("try subscribe but still exist")
+            complete(getSubscriber())
+            subscriber.set(this, sub)
+        }
+
+        if (log.isTraceEnabled) {
+            log.trace("set new subscriber {} -> {}, {}", sub, s, subscriber.get(this))
+        }
+    }
+
+    private fun getSubscriber(): Subscriber<DataBuffer> {
+        val get = subscriber.get(this)
+        logger.trace("get subscriber {}, {}, {}", this, get, s)
+
+        return requireNotNull(get) { "Subscriber is empty" } as Subscriber<DataBuffer>
+    }
+
+
     private inner class SocketSubscription(
-        private val subscriber: Subscriber<in DataBuffer>,
-        private val lock: ReentrantReadWriteLock
+        private val subscriber: Subscriber<in DataBuffer>
     ) :
         Subscription, CompletionHandler<Int, Pair<ByteBuffer, Subscriber<in DataBuffer>>> {
 
         private val running: AtomicBoolean = AtomicBoolean(true)
 
         override fun request(n: Long) {
-            lock.read {
-                val remain = request.updateAndGet { u ->
-                    when {
-                        n == Long.MAX_VALUE || u == Long.MAX_VALUE -> Long.MAX_VALUE
-                        (u + n) < 0 -> Long.MAX_VALUE - 2
-                        else -> u + n - 1
-                    }
+            val remain = request.updateAndGet { u ->
+                when {
+                    n == Long.MAX_VALUE || u == Long.MAX_VALUE -> Long.MAX_VALUE
+                    (u + n) < 0 -> Long.MAX_VALUE - 2
+                    else -> u + n - 1
                 }
+            }
 
-                logger.debug("request {}, {} reads remain", n, remain)
-                if (remain >= 0) {
-                    requestRead()
-                }
+            logger.trace("request {}, {} reads remain", n, remain)
+            if (remain >= 0) {
+                requestRead()
             }
         }
 
@@ -130,7 +142,7 @@ internal class AsyncSocketChannelReceivePublisher(
                 cancel()
                 return
             }
-            logger.debug("read request")
+            logger.trace("read request")
             socketChannel.read(
                 createBuffer,
                 option.socketOption.timeout,
@@ -141,13 +153,11 @@ internal class AsyncSocketChannelReceivePublisher(
         }
 
         override fun cancel() {
-            lock.read {
-                running.set(false)
-                if (option.closeOnCancel) {
-                    option.socketChannel.close()
-                }
-                request.set(0)
+            running.set(false)
+            if (option.closeOnCancel) {
+                option.socketChannel.close()
             }
+            request.set(0)
         }
 
 
@@ -157,28 +167,20 @@ internal class AsyncSocketChannelReceivePublisher(
 
             val readByte = result ?: -1
             if (readByte < 0) {
-                logger.debug("close by server")
+                logger.trace("close by server")
                 sub.onNext(EmptyDataBuffer)
                 sub.onComplete()
                 option.socketChannel.close()
                 return
             }
 
-            logger.debug("read {} bytes", result)
+            logger.trace("read {} bytes", result)
             sub.onNext(EmptyDataBuffer.append(ByteBuffer.wrap(buf.array(), 0, readByte)))
         }
 
         override fun failed(exc: Throwable?, attachment: Pair<ByteBuffer, Subscriber<in DataBuffer>>?) {
-            when (exc) {
-                is InterruptedByTimeoutException -> {
-                    logger.debug("data not found")
-                }
-                else -> {
-                    logger.error("read fail", exc)
-                    val sub = attachment?.second
-                    sub?.onError(exc)
-                }
-            }
+            val sub = attachment?.second
+            sub?.onError(exc)
         }
     }
 }
