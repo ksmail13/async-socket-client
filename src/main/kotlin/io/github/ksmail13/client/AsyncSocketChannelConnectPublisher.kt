@@ -1,5 +1,6 @@
 package io.github.ksmail13.client
 
+import io.github.ksmail13.exception.ConnectionTimeoutException
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
 import org.reactivestreams.Subscription
@@ -13,7 +14,7 @@ internal class AsyncSocketChannelConnectPublisher(
     private val addr: SocketAddress,
     private val socketOption: AsyncTcpClientOption,
     private val option: AsyncSocketChannelPublisherOption
-): Publisher<AsyncSocket> {
+) : Publisher<AsyncSocket> {
 
     private val subscriber = AtomicReference<Subscriber<in AsyncSocket>>()
 
@@ -38,11 +39,21 @@ internal class AsyncSocketChannelConnectPublisher(
             if (done.get()) return
 
             val (socketChannel) = option
-            socketChannel.connect(addr,
+            socketChannel.connect(
+                addr,
                 socketChannel to socketOption,
-                this)
+                this
+            )
 
-            done.set(true)
+            val (executor, timeout, timeUnit) = socketOption
+
+            executor.schedule({
+                if (!done.get()) {
+                    socketChannel.close()
+                    subscriber.onError(ConnectionTimeoutException("Connection timeout"))
+                    done.set(true)
+                }
+            }, timeout, timeUnit)
         }
 
         override fun cancel() {
@@ -52,12 +63,19 @@ internal class AsyncSocketChannelConnectPublisher(
         override fun completed(p0: Void?, p1: ConnectionAttachment?) {
             if (p1 == null) return
 
+
             val (socket, socketOption) = p1
+            if (done.get()) {
+                socket.close()
+                return
+            }
+            done.set(true)
             subscriber.onNext(AsyncSocketImplKt(socketOption, socket))
             subscriber.onComplete()
         }
 
         override fun failed(p0: Throwable?, p1: ConnectionAttachment?) {
+            done.set(true)
             subscriber.onError(p0)
         }
 

@@ -1,5 +1,6 @@
 package io.github.ksmail13.client
 
+import io.github.ksmail13.exception.WriteTimeoutException
 import org.reactivestreams.Subscriber
 import org.slf4j.Logger
 import java.nio.channels.CompletionHandler
@@ -17,6 +18,6 @@ internal class WriteCompletionHandler(
     override fun failed(exc: Throwable?, attachment: Subscriber<in Int>?) {
         logger.error("complete with fail", exc)
         if (exc == null) return
-        attachment?.onError(exc)
+        attachment?.onError(WriteTimeoutException(cause = exc))
     }
 }

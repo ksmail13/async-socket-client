@@ -1,6 +1,7 @@
 package io.github.ksmail13.client;
 
 import io.github.ksmail13.buffer.EmptyDataBuffer;
+import io.github.ksmail13.exception.TimeoutException;
 import io.github.ksmail13.server.EchoServer;
 import io.github.ksmail13.utils.JoinableSubscriber;
 import io.reactivex.rxjava3.core.Flowable;
@@ -19,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
 
 
 class AsyncTcpClientTest {
@@ -57,7 +58,7 @@ class AsyncTcpClientTest {
 
     @BeforeEach
     public void init() {
-        client = new AsyncTcpClient(new AsyncTcpClientOption(2, null, 500));
+        client = new AsyncTcpClient(new AsyncTcpClientOption(2, 500));
     }
 
     @AfterEach
@@ -134,4 +135,12 @@ class AsyncTcpClientTest {
         assertThat(futures).allMatch(Boolean.TRUE::equals);
     }
 
+    @Test
+    void connectionTimeoutTest() {
+        AsyncTcpClient asyncTcpClient = new AsyncTcpClient(new AsyncTcpClientOption(2, 0));
+        assertThatThrownBy(() ->
+                Single.fromPublisher(asyncTcpClient.connect(new InetSocketAddress("127.0.0.1", 35000)))
+                        .blockingGet())
+                .isInstanceOf(TimeoutException.class);
+    }
 }

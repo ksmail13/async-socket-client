@@ -2,6 +2,7 @@ package io.github.ksmail13.client
 
 import io.github.ksmail13.buffer.DataBuffer
 import io.github.ksmail13.buffer.EmptyDataBuffer
+import io.github.ksmail13.exception.ReadTimeoutException
 import io.github.ksmail13.logging.Logging
 import org.reactivestreams.Publisher
 import org.reactivestreams.Subscriber
@@ -177,7 +178,7 @@ internal class AsyncSocketChannelReceivePublisher(
 
         override fun failed(exc: Throwable?, attachment: Pair<ByteBuffer, Subscriber<in DataBuffer>>?) {
             val sub = attachment?.second
-            sub?.onError(exc)
+            sub?.onError(ReadTimeoutException(cause = exc))
         }
     }
 }
