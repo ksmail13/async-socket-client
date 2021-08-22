@@ -49,7 +49,7 @@ private class CountFilteredSubscriber(private val filter: Function1<Long, Long>)
     }
 }
 
-val logger = LoggerFactory.getLogger("io.github.ksmail13.client.ReadHelper")
+private val logger = LoggerFactory.getLogger("io.github.ksmail13.client.ReadHelper")
 
 fun Publisher<DataBuffer>.once(): Publisher<DataBuffer> =
     CountFilteredSubscriber { 1 }.also {

@@ -49,16 +49,16 @@ internal class AsyncSocketChannelReceivePublisher(
     }
 
     override fun onNext(t: DataBuffer?) {
-        logger.trace("onNext {}", this)
+        log.trace("onNext {}", this)
         val sub = getSubscriber()
         sub.onNext(t)
         val remain = remainRequest.updateAndGet { if (it == Long.MAX_VALUE) it else it - 1 }
         if (remain > 0) {
-            logger.trace("call downstream {}", remain)
+            log.trace("call downstream {}", remain)
             // 재요청하면서 다시 필요 처리량이 늘지 않도록 0으로 호출
             subscription.get().request(0)
         } else {
-            logger.trace("clear downstream {}", remain)
+            log.trace("clear downstream {}", remain)
             complete(sub)
         }
     }
@@ -92,7 +92,7 @@ internal class AsyncSocketChannelReceivePublisher(
         }
 
         if (!subscriber.compareAndSet(this, null, sub)) {
-            logger.trace("try subscribe but still exist")
+            log.trace("try subscribe but still exist")
             complete(getSubscriber())
             subscriber.set(this, sub)
         }
@@ -104,7 +104,7 @@ internal class AsyncSocketChannelReceivePublisher(
 
     private fun getSubscriber(): Subscriber<DataBuffer> {
         val get = subscriber.get(this)
-        logger.trace("get subscriber {}, {}, {}", this, get, s)
+        log.trace("get subscriber {}, {}, {}", this, get, s)
 
         return requireNotNull(get) { "Subscriber is empty" } as Subscriber<DataBuffer>
     }
@@ -126,7 +126,7 @@ internal class AsyncSocketChannelReceivePublisher(
                 }
             }
 
-            logger.trace("request {}, {} reads remain", n, remain)
+            log.trace("request {}, {} reads remain", n, remain)
             if (remain >= 0) {
                 requestRead()
             }
@@ -140,7 +140,7 @@ internal class AsyncSocketChannelReceivePublisher(
                 cancel()
                 return
             }
-            logger.trace("read request")
+            log.trace("read request")
             socketChannel.read(
                 createBuffer,
                 option.socketOption.timeout,
@@ -165,14 +165,14 @@ internal class AsyncSocketChannelReceivePublisher(
 
             val readByte = result ?: -1
             if (readByte < 0) {
-                logger.trace("close by server")
+                log.trace("close by server")
                 sub.onNext(EmptyDataBuffer)
                 sub.onComplete()
                 option.socketChannel.close()
                 return
             }
 
-            logger.trace("read {} bytes", result)
+            log.trace("read {} bytes", result)
             sub.onNext(EmptyDataBuffer.append(ByteBuffer.wrap(buf.array(), 0, readByte)))
         }
 

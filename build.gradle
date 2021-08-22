@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'org.jetbrains.kotlin.jvm' version '1.5.0'
+    id 'org.jetbrains.kotlin.jvm' version '1.5.21'
     id 'idea'
 }
 
@@ -22,18 +22,18 @@ dependencies {
     // https://mvnrepository.com/artifact/ch.qos.logback/logback-classic
     testCompile group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.3'
 
-    testImplementation(platform('org.junit:junit-bom:5.7.0'))
+    testImplementation(platform('org.junit:junit-bom:5.7.2'))
     testImplementation('org.junit.jupiter:junit-jupiter')
-    testImplementation("org.assertj:assertj-core:3.18.1")
-    testImplementation 'io.kotest:kotest-runner-junit5:4.4.3'
-    testImplementation 'io.kotest:kotest-assertions-core:4.4.3'
-    testImplementation 'io.kotest:kotest-property:4.4.3'
-    testImplementation 'io.reactivex.rxjava3:rxjava:3.0.4'
+    testImplementation('org.assertj:assertj-core:3.20.2')
+    testImplementation 'io.kotest:kotest-runner-junit5:4.6.1'
+    testImplementation 'io.kotest:kotest-assertions-core:4.6.1'
+    testImplementation 'io.kotest:kotest-property:4.6.1'
+    testImplementation 'io.reactivex.rxjava3:rxjava:3.1.0'
 }
 
 test {
     useJUnitPlatform()
-    testLogging {
-        events "passed", "skipped", "failed"
-    }
+//    testLogging {
+//        events "passed", "skipped", "failed"
+//    }
 }
