@@ -21,7 +21,7 @@ class JoinableSubscriber<T> : Subscriber<T> {
     }
 
     override fun onError(t: Throwable?) {
-        future.obtrudeException(t)
+        future.completeExceptionally(t)
     }
 
     override fun onComplete() {

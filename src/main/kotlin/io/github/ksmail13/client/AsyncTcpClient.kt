@@ -1,30 +1,30 @@
 package io.github.ksmail13.client
 
+import org.reactivestreams.Publisher
 import org.slf4j.LoggerFactory
-import java.net.InetSocketAddress
-import java.util.concurrent.atomic.AtomicInteger
+import java.net.SocketAddress
+import java.nio.channels.AsynchronousSocketChannel
+import java.util.concurrent.ConcurrentHashMap
 
-class AsyncTcpClient(private val option : AsyncTcpClientOption = AsyncTcpClientOption(2)) {
+class AsyncTcpClient(private val option: AsyncTcpClientOption = AsyncTcpClientOption(2)) {
 
     companion object {
         private val log = LoggerFactory.getLogger(AsyncTcpClient::class.java.name)
     }
 
-    private val selectors = (0..option.ioThread).map { NioSelectorManager(it) }
-    private val writers = (0..option.ioThread).map { NioWriterLooper(it) }
+    private val socketMap: MutableMap<SocketAddress, AsyncSocketImplKt> = ConcurrentHashMap()
 
-    private val curr = AtomicInteger()
+    fun connect(addr: SocketAddress): Publisher<AsyncSocket> {
+        val asocket = AsynchronousSocketChannel.open(option.asyncGroup)
 
-
-    fun connect(addr: InetSocketAddress): AsyncSocket {
-        val idx = curr.getAndUpdate { (it + 1) / option.ioThread }
-        val socket = selectors[idx].newSocket(addr)
-        writers[idx].add(socket)
-        return socket
+        return AsyncSocketChannelConnectPublisher(addr,
+            option,
+            AsyncSocketChannelPublisherOption(asocket, option))
     }
 
     fun close() {
-        selectors.forEach { it.close() }
+        socketMap.forEach { (_, v) -> v.close() }
+        socketMap.clear()
     }
 
 }

@@ -1,11 +1,9 @@
 package io.github.ksmail13.logging
 
-import java.util.logging.ConsoleHandler
-import java.util.logging.Level
-import java.util.logging.Logger
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 
-fun initLog(logger: Logger): Logger {
-    logger.useParentHandlers = false
-    logger.addHandler(ConsoleHandler().apply { level = Level.FINEST })
-    return logger
+interface Logging {
+    val log: Logger
+        get() = LoggerFactory.getLogger(this::class.java)
 }

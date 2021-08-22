@@ -2,9 +2,16 @@ package io.github.ksmail13.common
 
 import java.nio.ByteBuffer
 
-class BufferFactory(private val size: Int) {
+interface BufferFactory {
+    fun createBuffer(): ByteBuffer
+}
 
-    fun createBuffer(): ByteBuffer {
+class SimpleBufferFactory(private val size: Int): BufferFactory {
+
+    override fun createBuffer(): ByteBuffer {
         return ByteBuffer.allocate(size)
     }
 }
+
+val DefaultBufferFactory = SimpleBufferFactory(2048)
+

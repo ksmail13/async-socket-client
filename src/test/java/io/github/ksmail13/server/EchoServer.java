@@ -59,21 +59,36 @@ public class EchoServer implements Runnable {
             while (!socket.isClosed()) {
                 try {
                     int read = socket.getInputStream().read(bytes);
-                    if (read == 0) break;
-                    if (read < 0) {
+//                    if (read == 0) break;
+                    if (read <= 0) {
+                        logger.debug("close by client with empty read {}", read);
+                        socket.close();
+                        return;
+                    }
+
+                    byte[] readBuffer = new byte[read];
+                    System.arraycopy(bytes, 0, readBuffer, 0, read);
+                    String readString = new String(readBuffer);
+                    logger.info("server recv : {} {}", read, readString);
+                    if ("quit".equals(readString)) {
                         socket.close();
                         break;
+                    } else {
+                        OutputStream outputStream = socket.getOutputStream();
+                        outputStream.write(readBuffer);
+                        outputStream.flush();
                     }
-                    byte[] readed = new byte[read];
-                    System.arraycopy(bytes, 0, readed, 0, read);
-                    logger.info("server recv : {} {}", read, new String(readed));
-                    OutputStream outputStream = socket.getOutputStream();
-                    outputStream.write(readed);
-                    outputStream.flush();
                 } catch (IOException e) {
                     throw new IllegalStateException(e);
                 }
             }
         }
+    }
+
+    public static void main(String[] args) throws InterruptedException {
+        Thread thread = new Thread(new EchoServer(Integer.parseInt(args[0])));
+        thread.start();
+
+        thread.join();
     }
 }

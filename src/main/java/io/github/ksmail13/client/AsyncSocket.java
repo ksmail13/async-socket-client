@@ -5,6 +5,6 @@ import org.reactivestreams.Publisher;
 
 public interface AsyncSocket {
     Publisher<DataBuffer> read();
-    Publisher<Void> write(DataBuffer buffer);
+    Publisher<Integer> write(DataBuffer buffer);
     Publisher<Void> close();
 }

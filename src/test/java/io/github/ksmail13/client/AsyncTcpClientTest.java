@@ -1,28 +1,26 @@
 package io.github.ksmail13.client;
 
-import io.github.ksmail13.buffer.DataBuffer;
 import io.github.ksmail13.buffer.EmptyDataBuffer;
+import io.github.ksmail13.exception.TimeoutException;
 import io.github.ksmail13.server.EchoServer;
 import io.github.ksmail13.utils.JoinableSubscriber;
+import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Single;
 import kotlin.Pair;
-import kotlin.text.StringsKt;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.*;
-import org.reactivestreams.Publisher;
-import org.reactivestreams.Subscriber;
-import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.*;
 
 
 class AsyncTcpClientTest {
@@ -60,7 +58,7 @@ class AsyncTcpClientTest {
 
     @BeforeEach
     public void init() {
-        client = new AsyncTcpClient();
+        client = new AsyncTcpClient(new AsyncTcpClientOption(2, 500));
     }
 
     @AfterEach
@@ -68,124 +66,81 @@ class AsyncTcpClientTest {
         client.close();
     }
 
-    @Test
+    @RepeatedTest(value = 100, name = RepeatedTest.LONG_DISPLAY_NAME)
+    @Timeout(1)
+    @DisplayName("Single threaded request")
     void test() {
+
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-        AsyncSocket connect = client.connect(addr);
-        DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
-        Publisher<DataBuffer> read = connect.read();
-        read.subscribe(dataBufferSubscriber);
-        String test = "test";
-        StringBuilder sb = new StringBuilder();
+
         int cnt = 10;
-        for (int i = 0; i < cnt; i++) {
-            JoinableSubscriber<Void> joinableSubscriber = new JoinableSubscriber<>();
-            connect.write(EmptyDataBuffer.INSTANCE.append(test.getBytes())).subscribe(joinableSubscriber);
-            joinableSubscriber.join();
-            String msg = new String(dataBufferSubscriber.getFuture().join()).trim();
-            logger.info("recv Message from: {}({})", msg, msg.length());
-            sb.append(msg);
-            assertThat(test).isEqualTo(msg);
-        }
-        assertThat(sb.toString()).isEqualTo(StringsKt.repeat("test", cnt));
-        logger.info("complete");
+        List<String> compares = Single.fromPublisher(client.connect(addr))
+                .flatMap(socket ->
+                        Flowable.just(socket)
+                                .flatMap((s) -> socket.write(EmptyDataBuffer.INSTANCE.append("test")))
+                                .doOnNext(i -> logger.debug("write message"))
+                                .flatMap((v) -> ReadHelperKt.once(socket.read()))
+                                .doOnNext(i -> logger.debug("read message"))
+                                .map(buf -> new String(buf.toBuffer().array()))
+                                .repeat(cnt)
+                                .doOnComplete(socket::close)
+                                .doOnNext(i -> logger.debug("close socket"))
+                                .toList())
+                .blockingGet();
+
+        assertThat(compares).containsOnly("test").hasSize(cnt);
     }
 
     @Test
     @Timeout(value = 1)
     void closeTest() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-        AsyncSocket connect = client.connect(addr);
-        DataBufferSubscriber dataBufferSubscriber = new DataBufferSubscriber();
-        Publisher<DataBuffer> read = connect.read();
-        CompletableFuture<Void> emptyFuture = new CompletableFuture<>();
-        read.subscribe(new Subscriber<DataBuffer>() {
-            @Override
-            public void onSubscribe(Subscription s) {
-
-            }
-
-            @Override
-            public void onNext(DataBuffer byteBuffer) {
-
-            }
-
-            @Override
-            public void onError(Throwable t) {
-                emptyFuture.completeExceptionally(t);
-            }
-
-            @Override
-            public void onComplete() {
-                emptyFuture.complete(null);
-            }
-        });
-        JoinableSubscriber<Void> subscriber = new JoinableSubscriber<>();
-        connect.close().subscribe(subscriber);
-        emptyFuture.join();
+        AsyncSocket connect = Single.fromPublisher(client.connect(addr)).blockingGet();
+        Single.fromPublisher(connect.write(EmptyDataBuffer.INSTANCE.append("quit"))).blockingGet();
+        Observable.fromPublisher(connect.read()).blockingSubscribe();
+        JoinableSubscriber<Void> s = new JoinableSubscriber<>();
+        connect.close().subscribe(s);
+        s.join();
     }
 
     @Test
-    void testMulti() throws InterruptedException {
+    void testMulti() {
         InetSocketAddress addr = new InetSocketAddress("127.0.0.1", 35000);
-        List<Pair<Integer, AsyncSocket>> collect = IntStream.range(0, CNT)
-                .mapToObj(i -> new Pair<>(i, client.connect(addr))).collect(Collectors.toList());
-        ExecutorService executorService = Executors.newFixedThreadPool(CNT, THREAD_FACTORY);
+        List<Pair<Integer, AsyncSocket>> collect = Flowable.fromStream(IntStream.range(0, CNT).boxed())
+                .flatMap(i -> Single.fromPublisher(client.connect(addr)).map(socket -> new Pair<>(i, socket)).toFlowable())
+                .collect(Collectors.toList()).blockingGet();
 
-        List<Future<Boolean>> futures = collect.stream()
+        List<Boolean> futures = collect.parallelStream()
                 .map(p -> {
                     AsyncSocket connect = p.getSecond();
                     int idx = p.getFirst();
-                    return (Callable<Boolean>) () -> {
-                        try {
-                            test();
-                            return true;
-                        } catch (Exception e) {
-                            logger.error("Fail test", e);
-                            return false;
-                        }
-                    };
+                    String target = "test" + idx;
+                    try {
+                        List<String> strings = Flowable.just(0)
+                                .flatMap(i -> connect.write(EmptyDataBuffer.INSTANCE.append(target)))
+                                .flatMap(i -> ReadHelperKt.once(connect.read()))
+                                .map(r -> new String(r.toBuffer().array()))
+                                .repeat(10)
+                                .toList()
+                                .blockingGet();
+                        strings.forEach(s -> assertThat(s).isEqualTo(target));
+                        return true;
+                    } catch (Exception e) {
+                        logger.error("Fail test", e);
+                        return false;
+                    }
                 })
-                .map(executorService::submit)
                 .collect(Collectors.toList());
 
-        assertThat(futures.stream().map(f -> {
-            try {
-                return f.get(1000, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                throw new IllegalStateException(e);
-            }
-        })).allMatch(Boolean.TRUE::equals);
+        assertThat(futures).allMatch(Boolean.TRUE::equals);
     }
 
-    static class DataBufferSubscriber implements Subscriber<DataBuffer> {
-
-        private final CompletableFuture<byte[]> future = new CompletableFuture<>();
-
-        @Override
-        public void onSubscribe(Subscription s) {
-
-        }
-
-        @Override
-        public void onNext(DataBuffer byteBuffer) {
-            ByteBuffer buffer = byteBuffer.toBuffer();
-            byte[] array = buffer.compact().array();
-            future.obtrudeValue(array);
-        }
-
-        @Override
-        public void onError(Throwable t) {
-            future.completeExceptionally(t);
-        }
-
-        @Override
-        public void onComplete() {
-
-        }
-
-        public CompletableFuture<byte[]> getFuture() {
-            return future;
-        }
+    @Test
+    void connectionTimeoutTest() {
+        AsyncTcpClient asyncTcpClient = new AsyncTcpClient(new AsyncTcpClientOption(2, 0));
+        assertThatThrownBy(() ->
+                Single.fromPublisher(asyncTcpClient.connect(new InetSocketAddress("127.0.0.1", 35000)))
+                        .blockingGet())
+                .isInstanceOf(TimeoutException.class);
     }
 }
